@@ -58,6 +58,8 @@ add_executable(kestrel
     src/engine/scanner.cpp
     src/engine/source.cpp
     src/engine/line_index.cpp
+    src/ui/window.cpp
+    src/ui/ui.cpp
 )
 target_include_directories(kestrel PRIVATE
     include
