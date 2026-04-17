@@ -1,7 +1,12 @@
 #pragma once
 
+#include "kestrel/line_index.hpp"
+
+#include <cstddef>
 #include <imgui.h>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace kestrel {
 
@@ -22,6 +27,20 @@ namespace kestrel {
       ImVec4 color_scope   = ImVec4(0.30f, 0.65f, 1.00f, 1.00f);
 
       float  search_bar_h  = 0.0f; // measured each frame
+
+      // non-owning view of current loaded source + line index
+      std::span<const char> source_bytes;
+      const LineIndex* lines = nullptr;
+
+      // filtered view: if non-null and non-empty, show only these line indices.
+      // if non-null but empty AND pattern_active, show nothing (no matches).
+      // if null, show all lines.
+      const std::vector<std::size_t>* visible_lines = nullptr;
+      bool pattern_active = false;
+
+      std::string compile_error;
+      std::size_t match_count = 0;
+      double scan_ms = 0.0;
   };
 
   void draw_ui(UiState& state);

@@ -1,11 +1,13 @@
 #include "kestrel/app.hpp"
+#include "kestrel/search.hpp"
 #include "kestrel/ui.hpp"
 #include "kestrel/util.hpp"
-#include "kestrel/source.hpp"
 #include "kestrel/window.hpp"
 
+#include <GLFW/glfw3.h>
+#include <hs.h>
+
 #include <iostream>
-#include <optional>
 
 namespace kestrel
 {
@@ -21,18 +23,11 @@ namespace kestrel
             return 0;
         }
 
-        std::optional<Source> s;
+        SearchController search;
         auto load_path = [&](std::string_view p) -> bool {
-            if (!is_valid_file_path(p)) {
-                std::cerr << "invalid: " << p << "\n";
-                return false;
-            }
-            try { s.emplace(Source::from_path(p)); }
-            catch (const SourceError& e) {
-                std::cerr << "error: " << e.what() << "\n";
-                return false;
-            }
-            std::cout << "loaded file: " << p << "\n";
+            if (!is_valid_file_path(p)) return false;
+            try { search.load_source(p); }
+            catch (const SourceError&) { return false; }
             return true;
         };
 
@@ -45,9 +40,30 @@ namespace kestrel
         });
 
         UiState ui;
-
         while (!w.should_close() && !ui.quit_requested)
         {
+            // UI intent -> controller
+            unsigned flags = HS_FLAG_SOM_LEFTMOST;
+            if (!ui.case_sensitive) flags |= HS_FLAG_CASELESS;
+            search.set_pattern(ui.query, flags);
+            search.tick(glfwGetTime());
+
+            // controller -> UI
+            if (search.has_source()) {
+                ui.source_bytes = search.source_bytes();
+                ui.lines = &search.line_index();
+            } else {
+                ui.source_bytes = {};
+                ui.lines = nullptr;
+            }
+            ui.pattern_active  = !search.pattern_empty();
+            ui.visible_lines   = &search.matched_lines();
+            ui.compile_error   = search.compile_error();
+            ui.match_count     = search.matches().size();
+            ui.scan_ms         = search.last_scan_ms();
+            ui.matches_before  = static_cast<int>(search.matches_before(0));
+            ui.matches_after   = static_cast<int>(search.matches_after(0));
+
             w.begin_frame();
             draw_ui(ui);
             if (!ui.pending_open.empty()) {

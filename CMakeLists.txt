@@ -44,6 +44,7 @@ include(FetchContent)
 FetchContent_Declare(jetbrains_mono
     URL      https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip
     URL_HASH SHA256=6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(jetbrains_mono)
 set(KESTREL_FONT_DIR "${jetbrains_mono_SOURCE_DIR}/fonts/ttf" CACHE PATH "" FORCE)
@@ -71,6 +72,7 @@ add_executable(kestrel
     src/main.cpp
     src/app.cpp
     src/util.cpp
+    src/search.cpp
     src/engine/scanner.cpp
     src/engine/source.cpp
     src/engine/line_index.cpp

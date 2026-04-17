@@ -83,6 +83,13 @@ namespace kestrel
                 ImGui::SetTooltip("Matches after cursor");
 
             ImGui::SameLine();
+            ImGui::TextDisabled("|");
+            ImGui::SameLine();
+            ImGui::Text("%zu matches", state.match_count);
+            ImGui::SameLine();
+            ImGui::TextDisabled("%.2f ms", state.scan_ms);
+
+            ImGui::SameLine();
             ImGui::ColorEdit4("match", &state.color_match.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
             ImGui::SameLine();
             ImGui::TextUnformatted("match");
@@ -100,6 +107,11 @@ namespace kestrel
             float hint_w = ImGui::CalcTextSize(hint).x;
             ImGui::SameLine(ImGui::GetWindowWidth() - hint_w - ImGui::GetStyle().WindowPadding.x);
             ImGui::TextDisabled("%s", hint);
+
+            if (!state.compile_error.empty())
+            {
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", state.compile_error.c_str());
+            }
 
             state.search_bar_h = ImGui::GetWindowHeight();
         }
@@ -121,7 +133,6 @@ namespace kestrel
 
         if (ImGui::Begin("##results", nullptr, flags))
         {
-            constexpr int kDummyCount = 1'000'000;
             if (state.snap_scroll)
             {
                 float line_h = ImGui::GetTextLineHeightWithSpacing();
@@ -130,18 +141,48 @@ namespace kestrel
                 if (snapped != y)
                     ImGui::SetScrollY(snapped);
             }
-            ImGuiListClipper clipper;
-            clipper.Begin(kDummyCount);
-            while (clipper.Step())
+
+            if (!state.lines || state.source_bytes.empty())
             {
-                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
+                ImGui::TextDisabled("No file loaded. Drop a file or use File > Open...");
+            }
+            else
+            {
+                const int total_lines = static_cast<int>(state.lines->line_count());
+                const bool filtered = state.pattern_active;
+                const int view_count = filtered
+                    ? (state.visible_lines ? static_cast<int>(state.visible_lines->size()) : 0)
+                    : total_lines;
+
+                if (filtered && view_count == 0 && state.compile_error.empty())
                 {
-                    if (state.show_line_nums)
+                    ImGui::TextDisabled("No matches.");
+                }
+
+                ImGuiListClipper clipper;
+                clipper.Begin(view_count);
+                while (clipper.Step())
+                {
+                    for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
                     {
-                        ImGui::TextDisabled("%7d ", i + 1);
-                        ImGui::SameLine();
+                        const int line_idx = filtered
+                            ? static_cast<int>((*state.visible_lines)[i])
+                            : i;
+                        if (state.show_line_nums)
+                        {
+                            ImGui::TextDisabled("%7d ", line_idx + 1);
+                            ImGui::SameLine();
+                        }
+                        std::size_t start = state.lines->line_start(line_idx);
+                        std::size_t end = (line_idx + 1 < total_lines)
+                            ? state.lines->line_start(line_idx + 1)
+                            : state.source_bytes.size();
+                        while (end > start && (state.source_bytes[end - 1] == '\n'
+                                            || state.source_bytes[end - 1] == '\r'))
+                            --end;
+                        const char* p = state.source_bytes.data() + start;
+                        ImGui::TextUnformatted(p, p + (end - start));
                     }
-                    ImGui::Text("dummy line %d  lorem ipsum dolor sit amet", i);
                 }
             }
         }
