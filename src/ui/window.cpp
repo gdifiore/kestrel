@@ -40,6 +40,8 @@ namespace kestrel
             ImGui_ImplGlfw_InitForOpenGL(handle_, true);
 
             ImGui_ImplOpenGL3_Init(nullptr);
+
+            glfwSetWindowUserPointer(handle_, this);
         }
         catch (...)
         {
@@ -89,6 +91,25 @@ namespace kestrel
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(handle_);
+    }
+
+    void Window::dispatch_drop(int count, const char **paths)
+    {
+        if (drop_cb_)
+            drop_cb_(std::span<const char *>{paths, static_cast<size_t>(count)});
+    }
+
+    static void drop_trampoline(GLFWwindow *w, int count, const char **paths)
+    {
+        auto *self = static_cast<Window *>(glfwGetWindowUserPointer(w));
+        if (self)
+            self->dispatch_drop(count, paths);
+    }
+
+    void Window::on_file_drop(std::function<void(std::span<const char *>)> cb)
+    {
+        drop_cb_ = std::move(cb);
+        glfwSetDropCallback(handle_, drop_cb_ ? &drop_trampoline : nullptr);
     }
 
 } // namespace kestrel

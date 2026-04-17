@@ -8,3 +8,4 @@ compile_commands.json
 *.swo
 .DS_Store
 TODO.md
+imgui.ini

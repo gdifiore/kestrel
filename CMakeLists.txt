@@ -33,6 +33,12 @@ target_include_directories(imgui PUBLIC
 )
 target_link_libraries(imgui PUBLIC glfw OpenGL::GL)
 
+# ---- ImGuiFileDialog ----
+set(IFD_DIR ${CMAKE_SOURCE_DIR}/third_party/ImGuiFileDialog)
+add_library(imguifiledialog STATIC ${IFD_DIR}/ImGuiFileDialog.cpp)
+target_include_directories(imguifiledialog PUBLIC ${IFD_DIR})
+target_link_libraries(imguifiledialog PUBLIC imgui)
+
 # ---- Vectorscan ----
 option(KESTREL_VENDOR_VECTORSCAN "Build vectorscan from third_party" ON)
 if(KESTREL_VENDOR_VECTORSCAN)
@@ -55,6 +61,7 @@ endif()
 add_executable(kestrel
     src/main.cpp
     src/app.cpp
+    src/util.cpp
     src/engine/scanner.cpp
     src/engine/source.cpp
     src/engine/line_index.cpp
@@ -66,7 +73,7 @@ target_include_directories(kestrel PRIVATE
     third_party/vectorscan/src
     ${CMAKE_BINARY_DIR}/third_party/vectorscan
 )
-target_link_libraries(kestrel PRIVATE imgui ${VECTORSCAN_TARGET})
+target_link_libraries(kestrel PRIVATE imgui imguifiledialog ${VECTORSCAN_TARGET})
 target_compile_options(kestrel PRIVATE
     -Wall -Wextra -Wpedantic
     $<$<CONFIG:Release>:-O3 -march=native>

@@ -7,3 +7,6 @@
 [submodule "third_party/vectorscan"]
 	path = third_party/vectorscan
 	url = https://github.com/VectorCamp/vectorscan
+[submodule "third_party/ImGuiFileDialog"]
+	path = third_party/ImGuiFileDialog
+	url = https://github.com/aiekick/ImGuiFileDialog

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 
@@ -7,30 +9,38 @@
 
 struct GLFWwindow;
 
-namespace kestrel {
+namespace kestrel
+{
 
-  class Window {
-  public:
-      Window(std::string_view title, int width, int height);
-      ~Window();
-      Window(const Window&) = delete;
-      Window& operator=(const Window&) = delete;
-      Window(Window&&) = delete;
-      Window& operator=(Window&&) = delete;
+    class Window
+    {
+    public:
+        Window(std::string_view title, int width, int height);
+        ~Window();
+        Window(const Window &) = delete;
+        Window &operator=(const Window &) = delete;
+        Window(Window &&) = delete;
+        Window &operator=(Window &&) = delete;
 
-      bool should_close() const;
-      void begin_frame();
-      void end_frame();
+        bool should_close() const;
+        void begin_frame();
+        void end_frame();
 
-  private:
-      GLFWwindow* handle_ = nullptr;
+        void dispatch_drop(int count, const char **paths);
+        void on_file_drop(std::function<void(std::span<const char *>)>);
 
-      ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-  };
+    private:
+        GLFWwindow *handle_ = nullptr;
 
-  class WindowError : public std::runtime_error {
-  public:
-      using std::runtime_error::runtime_error;
-  };
+        ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+        std::function<void(std::span<const char *>)> drop_cb_;
+    };
+
+    class WindowError : public std::runtime_error
+    {
+    public:
+        using std::runtime_error::runtime_error;
+    };
 
 } // namespace kestrel

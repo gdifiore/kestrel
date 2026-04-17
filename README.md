@@ -43,14 +43,3 @@ cmake --build build -j4
 ```bash
 ctest --test-dir build --output-on-failure
 ```
-
-## Layout
-
-```
-include/kestrel/   Public headers
-src/               App + engine sources
-src/engine/        Scanner (vectorscan wrapper)
-tests/             Unit tests
-cmake/             CMake find modules
-third_party/       Vendored deps (submodules)
-```
