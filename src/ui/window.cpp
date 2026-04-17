@@ -22,16 +22,24 @@ namespace kestrel
             glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
             glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
-            handle_ = glfwCreateWindow((int)(width * main_scale), (int)(height * main_scale), std::string(title).c_str(), nullptr, nullptr);
+            const int scaled_w = (int)(width * main_scale);
+            const int scaled_h = (int)(height * main_scale);
+            handle_ = glfwCreateWindow(scaled_w, scaled_h, std::string(title).c_str(), nullptr, nullptr);
             if (handle_ == nullptr)
             {
                 glfwTerminate();
                 throw WindowError("glfwCreateWindow failed");
             }
+            glfwSetWindowSizeLimits(handle_, scaled_w, scaled_h, GLFW_DONT_CARE, GLFW_DONT_CARE);
             glfwMakeContextCurrent(handle_);
             glfwSwapInterval(1); // Enable vsync
 
             ImGui::CreateContext();
+
+#ifdef KESTREL_FONT_REGULAR
+            ImGuiIO& io = ImGui::GetIO();
+            io.Fonts->AddFontFromFileTTF(KESTREL_FONT_REGULAR, 15.0f * main_scale);
+#endif
 
             // configurable later
             ImGui::StyleColorsDark();

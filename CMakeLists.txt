@@ -39,6 +39,15 @@ add_library(imguifiledialog STATIC ${IFD_DIR}/ImGuiFileDialog.cpp)
 target_include_directories(imguifiledialog PUBLIC ${IFD_DIR})
 target_link_libraries(imguifiledialog PUBLIC imgui)
 
+# ---- JetBrains Mono (fetched zip, extracted into build dir) ----
+include(FetchContent)
+FetchContent_Declare(jetbrains_mono
+    URL      https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip
+    URL_HASH SHA256=6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf
+)
+FetchContent_MakeAvailable(jetbrains_mono)
+set(KESTREL_FONT_DIR "${jetbrains_mono_SOURCE_DIR}/fonts/ttf" CACHE PATH "" FORCE)
+
 # ---- Vectorscan ----
 option(KESTREL_VENDOR_VECTORSCAN "Build vectorscan from third_party" ON)
 if(KESTREL_VENDOR_VECTORSCAN)
@@ -74,6 +83,9 @@ target_include_directories(kestrel PRIVATE
     ${CMAKE_BINARY_DIR}/third_party/vectorscan
 )
 target_link_libraries(kestrel PRIVATE imgui imguifiledialog ${VECTORSCAN_TARGET})
+target_compile_definitions(kestrel PRIVATE
+    KESTREL_FONT_REGULAR="${KESTREL_FONT_DIR}/JetBrainsMono-Regular.ttf"
+)
 target_compile_options(kestrel PRIVATE
     -Wall -Wextra -Wpedantic
     $<$<CONFIG:Release>:-O3 -march=native>

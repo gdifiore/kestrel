@@ -22,36 +22,29 @@ namespace kestrel
         }
 
         std::optional<Source> s;
-        if (args->file_path)
-        {
-            try
-            {
-                s.emplace(Source::from_path(*args->file_path));
+        auto load_path = [&](std::string_view p) -> bool {
+            if (!is_valid_file_path(p)) {
+                std::cerr << "invalid: " << p << "\n";
+                return false;
             }
-            catch (const SourceError &e)
-            {
+            try { s.emplace(Source::from_path(p)); }
+            catch (const SourceError& e) {
                 std::cerr << "error: " << e.what() << "\n";
-                return 1;
+                return false;
             }
-        }
+            std::cout << "loaded file: " << p << "\n";
+            return true;
+        };
+
+        if (args->file_path && !load_path(*args->file_path))
+            return 1;
 
         Window w("kestrel", 800, 600);
-
-        w.on_file_drop([&](std::span<const char *> paths)
-        {                                                                                                                           
-            if (paths.empty()) return;                                                                                                                                             
-            if (!is_valid_file_path(paths[0])) { std::cerr << "invalid: " << paths[0] << "\n"; return; }                                                                             
-            try { s.emplace(Source::from_path(paths[0])); }                                                                                                                          
-            catch (const SourceError& e) { std::cerr << "error: " << e.what() << "\n"; return; }                                                                                     
-            std::cout << "loaded file: " << paths[0] << std::endl;       
+        w.on_file_drop([&](std::span<const char *> paths) {
+            if (!paths.empty()) load_path(paths[0]);
         });
 
         UiState ui;
-        auto load_path = [&](const std::string& p) {
-            if (!is_valid_file_path(p)) { std::cerr << "invalid: " << p << "\n"; return; }
-            try { s.emplace(Source::from_path(p)); }
-            catch (const SourceError& e) { std::cerr << "error: " << e.what() << "\n"; }
-        };
 
         while (!w.should_close() && !ui.quit_requested)
         {
