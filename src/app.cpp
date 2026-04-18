@@ -39,36 +39,22 @@ namespace kestrel
             if (!paths.empty()) load_path(paths[0]);
         });
 
-        UiState ui;
+        UiInputs ui;
         while (!w.should_close() && !ui.quit_requested)
         {
-            // UI intent -> controller
-            unsigned flags = HS_FLAG_SOM_LEFTMOST;
+            unsigned flags = 0;
             if (!ui.case_sensitive) flags |= HS_FLAG_CASELESS;
             search.set_pattern(ui.query, flags);
             search.tick(glfwGetTime());
 
-            // controller -> UI
-            if (search.has_source()) {
-                ui.source_bytes = search.source_bytes();
-                ui.lines = &search.line_index();
-            } else {
-                ui.source_bytes = {};
-                ui.lines = nullptr;
-            }
-            ui.pattern_active  = !search.pattern_empty();
-            ui.visible_lines   = &search.matched_lines();
-            ui.compile_error   = search.compile_error();
-            ui.match_count     = search.matches().size();
-            ui.scan_ms         = search.last_scan_ms();
-            ui.matches_before  = static_cast<int>(search.matches_before(0));
-            ui.matches_after   = static_cast<int>(search.matches_after(0));
+            ui.matches_before = static_cast<int>(search.matches_before(0));
+            ui.matches_after  = static_cast<int>(search.matches_after(0));
 
             w.begin_frame();
-            draw_ui(ui);
-            if (!ui.pending_open.empty()) {
-                load_path(ui.pending_open);
-                ui.pending_open.clear();
+            draw_ui(ui, search);
+            if (ui.pending_open) {
+                load_path(*ui.pending_open);
+                ui.pending_open.reset();
             }
             w.end_frame();
         }

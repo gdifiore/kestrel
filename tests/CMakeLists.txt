@@ -21,3 +21,26 @@ target_include_directories(line_index_test PRIVATE
     ../third_party/doctest
 )
 add_test(NAME line_index_test COMMAND line_index_test)
+
+add_executable(search_controller_test
+    search_controller_test.cpp
+    ../src/search.cpp
+    ../src/engine/scanner.cpp
+    ../src/engine/source.cpp
+    ../src/engine/line_index.cpp
+)
+target_include_directories(search_controller_test PRIVATE
+    ../include
+    ../third_party/vectorscan/src
+    ../third_party/doctest
+    ${CMAKE_BINARY_DIR}/third_party/vectorscan
+)
+target_link_libraries(search_controller_test PRIVATE ${VECTORSCAN_TARGET})
+add_test(NAME search_controller_test COMMAND search_controller_test)
+
+add_executable(parse_cli_test parse_cli_test.cpp ../src/util.cpp)
+target_include_directories(parse_cli_test PRIVATE
+    ../include
+    ../third_party/doctest
+)
+add_test(NAME parse_cli_test COMMAND parse_cli_test)

@@ -3,6 +3,7 @@
 
 #include "kestrel/line_index.hpp"
 
+#include <string>
 #include <string_view>
 
 using kestrel::LineIndex;
@@ -72,6 +73,29 @@ TEST_CASE("offset exactly at line start maps to that line") {
     LineIndex li(view("a\nb\nc"));
     CHECK(li.line_of(2) == 1);   // start of line 1
     CHECK(li.line_of(4) == 2);   // start of line 2
+}
+
+TEST_CASE("CRLF line endings — \\r stays on previous line") {
+    //           0 1 2 3 4 5
+    //           a \r\n b \r\n
+    LineIndex li(view("a\r\nb\r\n"));
+    REQUIRE(li.line_count() == 2);
+    CHECK(li.line_start(0) == 0);
+    CHECK(li.line_start(1) == 3);
+    CHECK(li.line_of(0) == 0);   // 'a'
+    CHECK(li.line_of(1) == 0);   // '\r' part of line 0
+    CHECK(li.line_of(2) == 0);   // '\n' part of line 0
+    CHECK(li.line_of(3) == 1);   // 'b'
+    CHECK(li.line_of(5) == 1);   // '\n' of line 1
+}
+
+TEST_CASE("single huge line, no newlines") {
+    std::string buf(1'000'000, 'x');
+    LineIndex li(view(buf));
+    CHECK(li.line_count() == 1);
+    CHECK(li.line_start(0) == 0);
+    CHECK(li.line_of(0) == 0);
+    CHECK(li.line_of(buf.size() - 1) == 0);
 }
 
 TEST_CASE("many lines") {
