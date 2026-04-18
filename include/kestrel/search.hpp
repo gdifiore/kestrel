@@ -38,6 +38,8 @@ namespace kestrel
         bool is_compiling() const noexcept { return dirty_; }
         double last_scan_ms() const noexcept { return last_scan_ms_; }
 
+        std::span<const Match> matches_in_range(size_t lo, size_t hi) const;
+
         // cursor-relative counts; offset is a byte offset into source
         std::size_t matches_before(std::size_t offset) const;
         std::size_t matches_after(std::size_t offset) const;

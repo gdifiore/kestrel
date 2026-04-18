@@ -117,9 +117,9 @@ namespace kestrel
             {
                 ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", search.compile_error().c_str());
             }
-
-            if (in.search_bar_h == 0.0f)
-                in.search_bar_h = ImGui::GetFrameHeightWithSpacing() * 2.0f;
+            // Measure after all widgets are placed so the results window below
+            // sits flush, even when the error row appears or disappears.
+            in.search_bar_h = ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
         }
         ImGui::End();
     }
@@ -131,20 +131,27 @@ namespace kestrel
         ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, window_pos_y));
         ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, vp->WorkSize.y - in.search_bar_h));
 
+        // NoDecoration would strip the scrollbar too — spell out the flags we want.
         ImGuiWindowFlags flags =
-            ImGuiWindowFlags_NoDecoration |
+            ImGuiWindowFlags_NoTitleBar |
+            ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoSavedSettings |
             ImGuiWindowFlags_NoBringToFrontOnFocus;
 
         if (ImGui::Begin("##results", nullptr, flags))
         {
+            // Snap scroll to whole lines — prevents half-clipped rows when the
+            // trackpad lands on a sub-line offset. Skip near max scroll: flooring
+            // there would drop the scroll below max and clip the last line.
             if (in.snap_scroll)
             {
                 float line_h = ImGui::GetTextLineHeightWithSpacing();
                 float scroll_y = ImGui::GetScrollY();
+                float max_y = ImGui::GetScrollMaxY();
                 float snapped = std::floor(scroll_y / line_h) * line_h;
-                if (snapped != scroll_y)
+                if (snapped != scroll_y && scroll_y < max_y - 0.5f)
                     ImGui::SetScrollY(snapped);
             }
 
@@ -162,6 +169,11 @@ namespace kestrel
                 const bool filtered = !search.pattern_empty();
                 const auto &matched = search.matched_lines();
                 const int view_count = filtered ? static_cast<int>(matched.size()) : total_lines;
+                // Average over many glyphs: per-glyph rounding in CalcTextSize
+                // accumulates otherwise, and match rects drift off by ~1 char per ~40.
+                float char_width = ImGui::CalcTextSize(
+                    "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM").x / 50.0f;
+                float line_height = ImGui::GetTextLineHeight();
 
                 if (filtered && view_count == 0 && search.compile_error().empty())
                 {
@@ -189,6 +201,23 @@ namespace kestrel
                         while (end > start && (source_bytes[end - 1] == '\n' || source_bytes[end - 1] == '\r'))
                             --end;
                         const char *p = source_bytes.data() + start;
+
+                        ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+                        std::span matches_in_range = search.matches_in_range(start, end);
+
+                        // TODO: col_start/col_end are byte offsets. Correct for ASCII;
+                        // breaks for multibyte UTF-8 (one codepoint spans multiple bytes).
+                        // Revisit when we care about non-ASCII logs.
+                        for (auto match : matches_in_range)
+                        {
+                            std::size_t col_start = match.start - start;
+                            std::size_t col_end = std::min(match.end, end) - start;
+
+                            ImVec2 p_min(cursor_pos.x + col_start * char_width, cursor_pos.y);
+                            ImVec2 p_max(cursor_pos.x + col_end * char_width, cursor_pos.y + line_height);
+                            ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, ImGui::GetColorU32(in.color_match));
+                        }
+
                         ImGui::TextUnformatted(p, p + (end - start));
                     }
                 }

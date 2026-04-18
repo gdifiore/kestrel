@@ -44,6 +44,8 @@ namespace kestrel
         last_edit_sec_ = 0.0; // tick() will stamp on first call
     }
 
+    // Two-phase debounce: first tick after set_pattern() stamps the edit time,
+    // subsequent ticks rescan once debounce_ms_ has elapsed. Keeps typing cheap.
     void SearchController::tick(double now_sec)
     {
         if (!dirty_)
@@ -75,6 +77,8 @@ namespace kestrel
             scanner_.emplace(pattern_, flags_);
             auto bytes = source_->bytes();
             matches_ = scanner_->scan(std::string_view{bytes.data(), bytes.size()});
+            // Hyperscan does not guarantee callback order; sort so downstream
+            // (matched_lines dedup, binary-search lookups) can assume ascending start.
             std::sort(matches_.begin(), matches_.end());
             if (lines_)
             {
@@ -97,6 +101,19 @@ namespace kestrel
         }
         auto t1 = std::chrono::steady_clock::now();
         last_scan_ms_ = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    }
+
+    // Relies on matches_ sorted by start (see rescan). Returns matches whose
+    // start falls in [lo, hi); matches extending past hi are included.
+    std::span<const Match> SearchController::matches_in_range(size_t lo, size_t hi) const
+    {
+        auto begin = std::lower_bound(matches_.begin(), matches_.end(), lo,
+                                      [](const Match &m, size_t o)
+                                      { return m.start < o; });
+        auto end = std::lower_bound(begin, matches_.end(), hi,
+                                    [](const Match &m, size_t o)
+                                    { return m.start < o; });
+        return std::span<const Match>(&*begin, end - begin);
     }
 
     std::size_t SearchController::matches_before(std::size_t offset) const

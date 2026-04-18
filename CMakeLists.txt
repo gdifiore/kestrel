@@ -72,6 +72,7 @@ add_executable(kestrel
     src/main.cpp
     src/app.cpp
     src/util.cpp
+    src/config.cpp
     src/search.cpp
     src/engine/scanner.cpp
     src/engine/source.cpp

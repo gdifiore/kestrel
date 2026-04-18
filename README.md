@@ -43,3 +43,5 @@ cmake --build build -j4
 ```bash
 ctest --test-dir build --output-on-failure
 ```
+
+Example log taken from [logpai/loghub](https://github.com/logpai/loghub).

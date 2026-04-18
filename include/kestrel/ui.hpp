@@ -8,6 +8,8 @@ namespace kestrel {
 
   class SearchController;
 
+  // UI-owned state: user inputs + layout scratch. Derived/view state
+  // (matches, source bytes, compile errors) is read live from SearchController.
   struct UiInputs {
       bool show_demo = false;
       bool quit_requested = false;

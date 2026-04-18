@@ -1,4 +1,5 @@
 #include "kestrel/app.hpp"
+#include "kestrel/config.hpp"
 #include "kestrel/search.hpp"
 #include "kestrel/ui.hpp"
 #include "kestrel/util.hpp"
@@ -40,6 +41,7 @@ namespace kestrel
         });
 
         UiInputs ui;
+        load_config(ui);
         while (!w.should_close() && !ui.quit_requested)
         {
             unsigned flags = 0;
@@ -59,6 +61,7 @@ namespace kestrel
             w.end_frame();
         }
 
+        save_config(ui);
         return 0;
     }
 
