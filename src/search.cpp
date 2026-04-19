@@ -131,8 +131,7 @@ namespace kestrel
             last_edit_sec_ = 0.0;
 
             if (pattern_.empty()) {
-                // Empty pattern: clear matches immediately
-                std::lock_guard<std::mutex> lock(mutex_);
+                // Empty pattern: clear matches immediately (no lock needed - UI thread only)
                 matches_.clear();
                 matched_lines_.clear();
                 compile_error_.clear();
