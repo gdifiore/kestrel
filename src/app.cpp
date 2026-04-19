@@ -7,6 +7,7 @@
 
 #include <GLFW/glfw3.h>
 #include <hs.h>
+#include <spdlog/spdlog.h>
 
 #include <iostream>
 
@@ -24,11 +25,20 @@ namespace kestrel
             return 0;
         }
 
+        spdlog::info("kestrel start");
+
         SearchController search;
         auto load_path = [&](std::string_view p) -> bool {
-            if (!is_valid_file_path(p)) return false;
+            if (!is_valid_file_path(p)) {
+                spdlog::warn("reject path: {}", p);
+                return false;
+            }
             try { search.load_source(p); }
-            catch (const SourceError&) { return false; }
+            catch (const SourceError& e) {
+                spdlog::error("load_source failed: {} ({})", p, e.what());
+                return false;
+            }
+            spdlog::info("loaded {} ({} bytes)", p, search.source_bytes().size());
             return true;
         };
 
@@ -62,6 +72,7 @@ namespace kestrel
         }
 
         save_config(ui);
+        spdlog::info("kestrel exit");
         return 0;
     }
 

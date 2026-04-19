@@ -35,7 +35,7 @@ target_include_directories(search_controller_test PRIVATE
     ../third_party/doctest
     ${CMAKE_BINARY_DIR}/third_party/vectorscan
 )
-target_link_libraries(search_controller_test PRIVATE ${VECTORSCAN_TARGET})
+target_link_libraries(search_controller_test PRIVATE ${VECTORSCAN_TARGET} spdlog::spdlog)
 add_test(NAME search_controller_test COMMAND search_controller_test)
 
 add_executable(parse_cli_test parse_cli_test.cpp ../src/util.cpp)

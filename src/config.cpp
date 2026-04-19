@@ -2,6 +2,8 @@
 
 #include "kestrel/ui.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <format>
 #include <fstream>
@@ -86,7 +88,13 @@ namespace kestrel
 
     void load_config(UiInputs &in)
     {
-        std::ifstream config(config_path());
+        auto path = config_path();
+        std::ifstream config(path);
+        if (!config) {
+            spdlog::debug("no config at {}", path.string());
+            return;
+        }
+        spdlog::debug("load config {}", path.string());
 
         for (std::string line; getline(config, line);)
         {
@@ -124,7 +132,10 @@ namespace kestrel
 
         std::ofstream config(temp);
 
-        if (!config) return false;
+        if (!config) {
+            spdlog::warn("save_config: open failed {}", temp);
+            return false;
+        }
 
         write_bool(config, "case_sensitive", in.case_sensitive);
         write_bool(config, "show_line_nums", in.show_line_nums);
@@ -136,6 +147,7 @@ namespace kestrel
 
         if (std::rename(temp.c_str(), destination.c_str()) == 0)
             return true;
+        spdlog::warn("save_config: rename failed {} -> {}", temp, destination.string());
         std::remove(temp.c_str()); // cleanup on rename failure
         return false;
     }

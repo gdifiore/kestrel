@@ -1,5 +1,7 @@
 #include "kestrel/search.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <chrono>
 
@@ -98,9 +100,12 @@ namespace kestrel
         catch (const ScannerError &e)
         {
             compile_error_ = e.what();
+            spdlog::debug("pattern compile failed: {}", e.what());
         }
         auto t1 = std::chrono::steady_clock::now();
         last_scan_ms_ = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        spdlog::debug("rescan pattern='{}' flags={:#x} matches={} time={:.2f}ms",
+                      pattern_, flags_, matches_.size(), last_scan_ms_);
     }
 
     // Relies on matches_ sorted by start (see rescan). Returns matches whose

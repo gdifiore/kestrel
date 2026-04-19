@@ -49,6 +49,18 @@ FetchContent_Declare(jetbrains_mono
 FetchContent_MakeAvailable(jetbrains_mono)
 set(KESTREL_FONT_DIR "${jetbrains_mono_SOURCE_DIR}/fonts/ttf" CACHE PATH "" FORCE)
 
+# ---- spdlog ----
+set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.15.0
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(spdlog)
+
 # ---- Vectorscan ----
 option(KESTREL_VENDOR_VECTORSCAN "Build vectorscan from third_party" ON)
 if(KESTREL_VENDOR_VECTORSCAN)
@@ -85,7 +97,7 @@ target_include_directories(kestrel PRIVATE
     third_party/vectorscan/src
     ${CMAKE_BINARY_DIR}/third_party/vectorscan
 )
-target_link_libraries(kestrel PRIVATE imgui imguifiledialog ${VECTORSCAN_TARGET})
+target_link_libraries(kestrel PRIVATE imgui imguifiledialog ${VECTORSCAN_TARGET} spdlog::spdlog)
 target_compile_definitions(kestrel PRIVATE
     KESTREL_FONT_REGULAR="${KESTREL_FONT_DIR}/JetBrainsMono-Regular.ttf"
 )

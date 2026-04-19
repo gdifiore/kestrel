@@ -44,4 +44,14 @@ cmake --build build -j4
 ctest --test-dir build --output-on-failure
 ```
 
+## Bug reports
+
+Logs go to stderr. Capture with debug verbosity and attach to the issue:
+
+```bash
+KESTREL_LOG=debug ./build/kestrel 2> kestrel.log
+```
+
+Valid `KESTREL_LOG` values: `trace`, `debug`, `info` (default), `warn`, `err`, `off`.
+
 Example log taken from [logpai/loghub](https://github.com/logpai/loghub).
