@@ -4,19 +4,44 @@
 #include "kestrel/scanner.hpp"
 #include "kestrel/source.hpp"
 
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace kestrel
 {
 
+    // Async regex search controller. Runs pattern compilation and scanning
+    // on a background worker thread to keep UI responsive during heavy operations.
+    // Uses generation-based cancellation to abort stale scans when pattern changes.
     class SearchController
     {
+        // Work submitted to background worker thread
+        struct Job {
+            std::string pattern;
+            unsigned flags;
+            std::span<const char> source;
+            uint64_t generation;  // For cancellation when newer job arrives
+        };
+
+        // Results from completed background scan
+        struct Result {
+            std::vector<Match> matches;
+            std::vector<std::size_t> matched_lines;
+            std::string error;           // Compilation error if any
+            double scan_ms;              // Time taken for this scan
+            uint64_t generation;         // Which job produced this result
+        };
+
     public:
         SearchController();
+        ~SearchController();
 
         void load_source(std::string_view path); // throws SourceError
         void clear_source();
@@ -28,14 +53,17 @@ namespace kestrel
         void set_debounce_ms(int ms) noexcept { debounce_ms_ = ms; }
 
         // Called each frame with monotonic time in seconds.
-        // Compiles + scans if dirty and debounce elapsed.
+        // Processes completed scan results and submits new jobs after debounce.
         void tick(double now_sec);
 
         const std::vector<Match> &matches() const noexcept { return matches_; }
         const std::vector<std::size_t> &matched_lines() const noexcept { return matched_lines_; }
         bool pattern_empty() const noexcept { return pattern_.empty(); }
         const std::string &compile_error() const noexcept { return compile_error_; }
-        bool is_compiling() const noexcept { return dirty_; }
+        bool is_compiling() const noexcept {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return dirty_ || job_pending_;
+        }
         double last_scan_ms() const noexcept { return last_scan_ms_; }
 
         std::span<const Match> matches_in_range(size_t lo, size_t hi) const;
@@ -44,23 +72,39 @@ namespace kestrel
         std::size_t matches_before(std::size_t offset) const;
         std::size_t matches_after(std::size_t offset) const;
 
+        // Test helper: wait for any pending job to complete
+        void wait_for_completion();
+
     private:
-        void rescan();
+        void worker_loop();
+        void submit_job(std::string pattern, unsigned flags);
 
         std::optional<Source> source_;
         std::optional<LineIndex> lines_;
 
         std::string pattern_;
         unsigned flags_ = 0;
-        bool dirty_ = false;
         double last_edit_sec_ = 0.0;
         int debounce_ms_ = 150;
 
-        std::optional<Scanner> scanner_;
+        // Results from completed scans
         std::vector<Match> matches_;
         std::vector<std::size_t> matched_lines_;
         std::string compile_error_;
         double last_scan_ms_ = 0.0;
+
+        // Async worker state
+        mutable std::mutex mutex_;
+        std::condition_variable cv_;
+        std::thread worker_;
+        std::atomic<bool> stop_;
+        std::atomic<uint64_t> generation_;
+
+        // Protected by mutex_
+        bool dirty_ = false;
+        bool job_pending_ = false;
+        std::optional<Job> pending_job_;
+        std::optional<Result> latest_result_;
     };
 
 } // namespace kestrel

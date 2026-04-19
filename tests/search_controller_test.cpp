@@ -33,11 +33,13 @@ private:
     static inline int counter_ = 0;
 };
 
-// Drive tick twice with debounce=0: first call stamps last_edit, second rescans.
+// Drive tick twice with debounce=0: first call stamps last_edit, second submits job.
+// Then wait for async completion.
 void rescan_now(SearchController& sc) {
     sc.set_debounce_ms(0);
     sc.tick(1.0);
     sc.tick(1.0);
+    sc.wait_for_completion();
 }
 
 } // namespace

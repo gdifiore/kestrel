@@ -5,7 +5,7 @@ target_include_directories(scanner_test PRIVATE
     ../third_party/doctest
     ${CMAKE_BINARY_DIR}/third_party/vectorscan
 )
-target_link_libraries(scanner_test PRIVATE ${VECTORSCAN_TARGET})
+target_link_libraries(scanner_test PRIVATE ${VECTORSCAN_TARGET} spdlog::spdlog)
 add_test(NAME scanner_test COMMAND scanner_test)
 
 add_executable(source_test source_test.cpp ../src/engine/source.cpp)

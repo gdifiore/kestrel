@@ -4,26 +4,57 @@
 
 #include <algorithm>
 #include <chrono>
+#include <thread>
 
 namespace kestrel
 {
 
-    SearchController::SearchController() = default;
+    SearchController::SearchController()
+        : stop_(false), generation_(1)
+    {
+        worker_ = std::thread(&SearchController::worker_loop, this);
+    }
+
+    SearchController::~SearchController()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stop_.store(true);
+        }
+        cv_.notify_one();
+        if (worker_.joinable())
+            worker_.join();
+    }
 
     void SearchController::load_source(std::string_view path)
     {
         source_.emplace(Source::from_path(path));
         lines_.emplace(source_->bytes());
-        dirty_ = true;
+
+        std::lock_guard<std::mutex> lock(mutex_);
         pattern_.clear();
         matches_.clear();
+        matched_lines_.clear();
+        compile_error_.clear();
+        dirty_ = false;
+        job_pending_ = false;
+        pending_job_.reset();
+        latest_result_.reset();
     }
 
     void SearchController::clear_source()
     {
         source_.reset();
         lines_.reset();
+
+        std::lock_guard<std::mutex> lock(mutex_);
         matches_.clear();
+        matched_lines_.clear();
+        compile_error_.clear();
+        dirty_ = false;
+        job_pending_ = false;
+        pending_job_.reset();
+        latest_result_.reset();
     }
 
     std::span<const char> SearchController::source_bytes() const
@@ -42,70 +73,168 @@ namespace kestrel
             return;
         pattern_.assign(p);
         flags_ = flags;
-        dirty_ = true;
         last_edit_sec_ = 0.0; // tick() will stamp on first call
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        dirty_ = true;
     }
 
-    // Two-phase debounce: first tick after set_pattern() stamps the edit time,
-    // subsequent ticks rescan once debounce_ms_ has elapsed. Keeps typing cheap.
+    // Two-phase async operation:
+    // 1. Process any completed scan results from worker thread
+    // 2. Submit new jobs after debounce timeout (first tick stamps time, second submits)
+    // RAII scopes limit mutex lifetime to avoid blocking worker thread.
     void SearchController::tick(double now_sec)
     {
-        if (!dirty_)
-            return;
-        if (last_edit_sec_ == 0.0)
+        // Check for completed results first
         {
-            last_edit_sec_ = now_sec;
-            return;
-        }
-        if ((now_sec - last_edit_sec_) * 1000.0 < debounce_ms_)
-            return;
-        rescan();
-        dirty_ = false;
-    }
-
-    void SearchController::rescan()
-    {
-        matches_.clear();
-        matched_lines_.clear();
-        compile_error_.clear();
-        scanner_.reset();
-        last_scan_ms_ = 0.0;
-        if (pattern_.empty() || !source_)
-            return;
-
-        auto t0 = std::chrono::steady_clock::now();
-        try
-        {
-            scanner_.emplace(pattern_, flags_);
-            auto bytes = source_->bytes();
-            matches_ = scanner_->scan(std::string_view{bytes.data(), bytes.size()});
-            // Hyperscan does not guarantee callback order; sort so downstream
-            // (matched_lines dedup, binary-search lookups) can assume ascending start.
-            std::sort(matches_.begin(), matches_.end());
-            if (lines_)
-            {
-                matched_lines_.reserve(matches_.size());
-                std::size_t last = static_cast<std::size_t>(-1);
-                for (const auto &m : matches_)
-                {
-                    std::size_t line = lines_->line_of(m.start);
-                    if (line != last)
-                    {
-                        matched_lines_.push_back(line);
-                        last = line;
-                    }
-                }
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (latest_result_) {
+                matches_ = std::move(latest_result_->matches);
+                matched_lines_ = std::move(latest_result_->matched_lines);
+                compile_error_ = std::move(latest_result_->error);
+                last_scan_ms_ = latest_result_->scan_ms;
+                latest_result_.reset();
+                job_pending_ = false;
             }
         }
-        catch (const ScannerError &e)
+
+        // Handle debounced pattern updates
+        bool should_submit = false;
         {
-            compile_error_ = e.what();
-            spdlog::debug("pattern compile failed: {}", e.what());
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!dirty_) {
+                return; // No pending edit to process
+            }
+
+            if (last_edit_sec_ == 0.0) {
+                last_edit_sec_ = now_sec;
+                return; // Stamp time, wait for debounce
+            }
+
+            if ((now_sec - last_edit_sec_) * 1000.0 >= debounce_ms_) {
+                should_submit = true;
+                // Don't reset last_edit_sec_ here - will be reset by dirty_ = false
+            }
         }
-        auto t1 = std::chrono::steady_clock::now();
-        last_scan_ms_ = std::chrono::duration<double, std::milli>(t1 - t0).count();
-        spdlog::debug("rescan pattern='{}' flags={:#x} matches={} time={:.2f}ms",
-                      pattern_, flags_, matches_.size(), last_scan_ms_);
+
+        // Submit new job if debounce elapsed and we have source
+        if (should_submit && source_) {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (job_pending_) {
+                    return; // Job already pending, don't submit another
+                }
+                dirty_ = false; // Clear dirty when submitting
+            }
+
+            // Reset edit state - job submitted or processed
+            last_edit_sec_ = 0.0;
+
+            if (pattern_.empty()) {
+                // Empty pattern: clear matches immediately
+                std::lock_guard<std::mutex> lock(mutex_);
+                matches_.clear();
+                matched_lines_.clear();
+                compile_error_.clear();
+                last_scan_ms_ = 0.0;
+            } else {
+                submit_job(pattern_, flags_);
+            }
+        }
+    }
+
+    // Submit scan job to worker thread with unique generation ID.
+    // Worker can check generation against atomic counter to abort stale scans.
+    void SearchController::submit_job(std::string pattern, unsigned flags)
+    {
+        if (pattern.empty() || !source_)
+            return;
+
+        uint64_t gen = generation_.fetch_add(1) + 1;
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        pending_job_ = Job{
+            .pattern = std::move(pattern),
+            .flags = flags,
+            .source = source_->bytes(),
+            .generation = gen
+        };
+        job_pending_ = true;
+        cv_.notify_one();
+    }
+
+    // Background worker thread: compiles patterns and runs scans.
+    // Owns Scanner instance to avoid cross-thread vectorscan issues.
+    // Supports cancellation via generation counter polling.
+    void SearchController::worker_loop()
+    {
+        std::optional<Scanner> scanner;
+
+        while (true) {
+            std::optional<Job> job;
+
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                cv_.wait(lock, [this] { return stop_.load() || pending_job_; });
+
+                if (stop_.load())
+                    break;
+
+                job = std::move(pending_job_);
+                pending_job_.reset();
+            }
+
+            if (!job)
+                continue;
+
+            auto t0 = std::chrono::steady_clock::now();
+            Result result{
+                .matches = {},
+                .matched_lines = {},
+                .error = {},
+                .scan_ms = 0.0,
+                .generation = job->generation
+            };
+
+            try {
+                scanner.emplace(job->pattern, job->flags);
+                result.matches = scanner->scan(
+                    std::string_view{job->source.data(), job->source.size()},
+                    &generation_, job->generation
+                );
+
+                // Sort matches for binary search compatibility
+                std::sort(result.matches.begin(), result.matches.end());
+
+                // Build matched_lines with deduplication (requires lines_)
+                if (lines_) {
+                    result.matched_lines.reserve(result.matches.size());
+                    std::size_t last = static_cast<std::size_t>(-1);
+                    for (const auto &m : result.matches) {
+                        std::size_t line = lines_->line_of(m.start);
+                        if (line != last) {
+                            result.matched_lines.push_back(line);
+                            last = line;
+                        }
+                    }
+                }
+            } catch (const ScannerError &e) {
+                result.error = e.what();
+                spdlog::debug("pattern compile failed: {}", e.what());
+                scanner.reset(); // Clear failed scanner
+            }
+
+            auto t1 = std::chrono::steady_clock::now();
+            result.scan_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+            spdlog::debug("rescan pattern='{}' flags={:#x} matches={} time={:.2f}ms",
+                         job->pattern, job->flags, result.matches.size(), result.scan_ms);
+
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                latest_result_ = std::move(result);
+            }
+        }
     }
 
     // Relies on matches_ sorted by start (see rescan). Returns matches whose
@@ -135,6 +264,24 @@ namespace kestrel
                                    [](std::size_t o, const Match &m)
                                    { return o < m.start; });
         return static_cast<std::size_t>(matches_.end() - it);
+    }
+
+    void SearchController::wait_for_completion()
+    {
+        // Keep ticking until no job is pending
+        while (true) {
+            tick(1.0); // Use a dummy timestamp
+
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (!dirty_ && !job_pending_ && !latest_result_) {
+                    break;
+                }
+            }
+
+            // Brief yield to let worker thread complete
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
     }
 
 } // namespace kestrel

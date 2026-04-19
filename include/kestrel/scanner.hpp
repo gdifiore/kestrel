@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <stdexcept>
@@ -28,7 +30,12 @@ namespace kestrel
         Scanner &operator=(Scanner &&obj) noexcept;
         Scanner(const Scanner &obj) = delete;
 
-        std::vector<Match> scan(std::string_view buf) const;
+        // If cancel_counter is non-null, the match callback polls it each hit and
+        // aborts the scan when its value differs from my_gen. Used to stop a stale
+        // background scan when a newer pattern supersedes it.
+        std::vector<Match> scan(std::string_view buf,
+                                const std::atomic<uint64_t>* cancel_counter = nullptr,
+                                uint64_t my_gen = 0) const;
 
     private:
         hs_database_t *db_ = nullptr;

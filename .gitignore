@@ -11,3 +11,7 @@ TODO.md
 imgui.ini
 *.log
 REVIEW.md
+CMakeUserPresets.json
+*.txt
+poc/**
+docs/**

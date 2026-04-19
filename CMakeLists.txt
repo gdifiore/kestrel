@@ -67,6 +67,8 @@ if(KESTREL_VENDOR_VECTORSCAN)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    # Fix platform detection issues in vectorscan develop
+    set(FAT_RUNTIME OFF CACHE BOOL "" FORCE)
     # vectorscan uses -Werror upstream; newer clang flags unused-but-set vars.
     add_compile_options(
         -Wno-error=unused-but-set-variable
