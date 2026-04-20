@@ -389,8 +389,8 @@ namespace kestrel
 
                         if (cursor_view_pos >= 0)
                         {
-                            float line_height = ImGui::GetTextLineHeightWithSpacing();
-                            float target_scroll = cursor_view_pos * line_height - (ImGui::GetWindowHeight() * 0.5f);
+                            float scroll_line_height = ImGui::GetTextLineHeightWithSpacing();
+                            float target_scroll = cursor_view_pos * scroll_line_height - (ImGui::GetWindowHeight() * 0.5f);
                             target_scroll = std::max(0.0f, target_scroll);
                             ImGui::SetScrollY(target_scroll);
                         }

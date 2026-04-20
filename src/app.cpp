@@ -50,7 +50,7 @@ namespace kestrel
 
     static void handle_keyboard_shortcuts(UiInputs &ui, const SearchController &search)
     {
-        ImGuiIO &io = ImGui::GetIO();
+        const ImGuiIO &io = ImGui::GetIO();
 
         // Ctrl+F - Focus search input
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F))
@@ -73,10 +73,7 @@ namespace kestrel
         // Escape - Clear search
         if (ImGui::IsKeyPressed(ImGuiKey_Escape))
         {
-            if (ui.query[0] != '\0')
-            {
-                ui.query[0] = '\0'; // Clear search
-            }
+            ui.query[0] = '\0'; // Clear search
         }
 
         // n - Go to next match
