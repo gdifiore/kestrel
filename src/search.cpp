@@ -52,45 +52,19 @@ namespace kestrel
             std::lock_guard<std::mutex> lock(mutex_);
             loading_ = true;
             loading_error_.clear();
+
+            // Submit loading job to existing worker thread
+            pending_job_ = Job{
+                .type = JobType::LoadSource,
+                .pattern = {},
+                .flags = 0,
+                .file_path = std::move(path_copy),
+                .source = {},
+                .generation = 0  // Generation not used for load jobs
+            };
+            job_pending_ = true;
         }
-
-        // Submit loading job to worker thread (reuse existing worker)
-        auto load_job = [this, path_copy = std::move(path_copy)]() {
-            try {
-                auto new_source = std::make_shared<Source>(Source::from_path(path_copy));
-                auto new_lines = LineIndex(new_source->bytes());
-
-                // Atomically update state
-                {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    source_ = new_source;
-                    lines_.emplace(std::move(new_lines));
-
-                    // Clear search state
-                    pattern_.clear();
-                    matches_.clear();
-                    matched_lines_.clear();
-                    compile_error_.clear();
-                    dirty_ = false;
-                    job_pending_ = false;
-                    pending_job_.reset();
-                    latest_result_.reset();
-
-                    loading_ = false;
-                    loading_error_.clear();
-                }
-                spdlog::info("loaded {} ({} bytes)", path_copy, new_source->bytes().size());
-            }
-            catch (const SourceError& e) {
-                std::lock_guard<std::mutex> lock(mutex_);
-                loading_ = false;
-                loading_error_ = e.what();
-                spdlog::error("async load_source failed: {} ({})", path_copy, e.what());
-            }
-        };
-
-        // Run on separate thread to avoid blocking worker
-        std::thread(load_job).detach();
+        cv_.notify_one();
     }
 
     bool SearchController::is_loading() const noexcept
@@ -225,8 +199,10 @@ namespace kestrel
 
         std::lock_guard<std::mutex> lock(mutex_);
         pending_job_ = Job{
+            .type = JobType::Search,
             .pattern = std::move(pattern),
             .flags = flags,
+            .file_path = {},
             .source = source_, // Shared ownership keeps Source alive
             .generation = gen};
         job_pending_ = true;
@@ -261,71 +237,108 @@ namespace kestrel
             if (!job)
                 continue;
 
-            auto t0 = std::chrono::steady_clock::now();
-            Result result{
-                .matches = {},
-                .matched_lines = {},
-                .error = {},
-                .scan_ms = 0.0,
-                .generation = job->generation};
+            // Handle different job types
+            if (job->type == JobType::LoadSource) {
+                // Handle file loading job
+                try {
+                    auto new_source = std::make_shared<Source>(Source::from_path(job->file_path));
+                    auto new_lines = LineIndex(new_source->bytes());
 
-            try
-            {
-                // Reuse scanner if pattern and flags match (avoids expensive recompilation)
-                if (!scanner || job->pattern != cached_pattern || job->flags != cached_flags) {
-                    scanner.emplace(job->pattern, job->flags);
-                    cached_pattern = job->pattern;
-                    cached_flags = job->flags;
-                }
-                auto span = job->source->bytes();
-                spdlog::debug("worker scanning pattern '{}' on {} bytes", job->pattern, span.size());
-                result.matches = scanner->scan(
-                    std::string_view{span.data(), span.size()}, // Convert span to string_view
-                    &generation_, job->generation);
-                spdlog::debug("worker found {} matches", result.matches.size());
-
-                // Build matched_lines with deduplication (requires lines_)
-                if (lines_ && !result.matches.empty())
-                {
-                    // Estimate: assume average 100 chars per line for better allocation
-                    std::size_t estimated_lines = result.matches.size() / 100 + 1;
-                    result.matched_lines.reserve(std::min(estimated_lines, result.matches.size()));
-
-                    // Incremental line tracking (matches are in offset order)
-                    std::size_t current_line = lines_->line_of(result.matches[0].start);
-                    result.matched_lines.push_back(current_line);
-
-                    for (std::size_t i = 1; i < result.matches.size(); ++i)
+                    // Atomically update state
                     {
-                        // Only do binary search when we might have crossed a line boundary
-                        if (result.matches[i].start >= lines_->line_start(current_line + 1))
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        source_ = new_source;
+                        lines_.emplace(std::move(new_lines));
+
+                        // Clear search state
+                        pattern_.clear();
+                        matches_.clear();
+                        matched_lines_.clear();
+                        compile_error_.clear();
+                        dirty_ = false;
+                        job_pending_ = false;
+                        pending_job_.reset();
+                        latest_result_.reset();
+
+                        loading_ = false;
+                        loading_error_.clear();
+                    }
+                    spdlog::info("loaded {} ({} bytes)", job->file_path, new_source->bytes().size());
+                }
+                catch (const SourceError& e) {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    loading_ = false;
+                    loading_error_ = e.what();
+                    spdlog::error("async load_source failed: {} ({})", job->file_path, e.what());
+                }
+            } else if (job->type == JobType::Search) {
+                // Handle search job
+                auto t0 = std::chrono::steady_clock::now();
+                Result result{
+                    .matches = {},
+                    .matched_lines = {},
+                    .error = {},
+                    .scan_ms = 0.0,
+                    .generation = job->generation};
+
+                try
+                {
+                    // Reuse scanner if pattern and flags match (avoids expensive recompilation)
+                    if (!scanner || job->pattern != cached_pattern || job->flags != cached_flags) {
+                        scanner.emplace(job->pattern, job->flags);
+                        cached_pattern = job->pattern;
+                        cached_flags = job->flags;
+                    }
+                    auto span = job->source->bytes();
+                    spdlog::debug("worker scanning pattern '{}' on {} bytes", job->pattern, span.size());
+                    result.matches = scanner->scan(
+                        std::string_view{span.data(), span.size()}, // Convert span to string_view
+                        &generation_, job->generation);
+                    spdlog::debug("worker found {} matches", result.matches.size());
+
+                    // Build matched_lines with deduplication (requires lines_)
+                    if (lines_ && !result.matches.empty())
+                    {
+                        // Estimate: assume average 100 chars per line for better allocation
+                        std::size_t estimated_lines = result.matches.size() / 100 + 1;
+                        result.matched_lines.reserve(std::min(estimated_lines, result.matches.size()));
+
+                        // Incremental line tracking (matches are in offset order)
+                        std::size_t current_line = lines_->line_of(result.matches[0].start);
+                        result.matched_lines.push_back(current_line);
+
+                        for (std::size_t i = 1; i < result.matches.size(); ++i)
                         {
-                            current_line = lines_->line_of(result.matches[i].start);
-                            if (current_line != result.matched_lines.back())
+                            // Only do binary search when we might have crossed a line boundary
+                            if (result.matches[i].start >= lines_->line_start(current_line + 1))
                             {
-                                result.matched_lines.push_back(current_line);
+                                current_line = lines_->line_of(result.matches[i].start);
+                                if (current_line != result.matched_lines.back())
+                                {
+                                    result.matched_lines.push_back(current_line);
+                                }
                             }
                         }
                     }
                 }
-            }
-            catch (const ScannerError &e)
-            {
-                result.error = e.what();
-                spdlog::error("worker scan failed: {}", result.error);
-                scanner.reset(); // Clear failed scanner
-                cached_pattern.clear(); // Clear cache
-            }
+                catch (const ScannerError &e)
+                {
+                    result.error = e.what();
+                    spdlog::error("worker scan failed: {}", result.error);
+                    scanner.reset(); // Clear failed scanner
+                    cached_pattern.clear(); // Clear cache
+                }
 
-            auto t1 = std::chrono::steady_clock::now();
-            result.scan_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                auto t1 = std::chrono::steady_clock::now();
+                result.scan_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
-            spdlog::debug("rescan pattern='{}' flags={:#x} matches={} time={:.2f}ms",
-                          job->pattern, job->flags, result.matches.size(), result.scan_ms);
+                spdlog::debug("rescan pattern='{}' flags={:#x} matches={} time={:.2f}ms",
+                              job->pattern, job->flags, result.matches.size(), result.scan_ms);
 
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                latest_result_ = std::move(result);
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    latest_result_ = std::move(result);
+                }
             }
         }
     }

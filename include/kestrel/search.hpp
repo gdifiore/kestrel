@@ -24,11 +24,15 @@ namespace kestrel
     class SearchController
     {
         // Work submitted to background worker thread
+        enum class JobType { Search, LoadSource };
+
         struct Job {
-            std::string pattern;
-            unsigned flags;
-            std::shared_ptr<const Source> source;  // Shared ownership keeps mmap alive
-            uint64_t generation;  // For cancellation when newer job arrives
+            JobType type;
+            std::string pattern;        // For search jobs
+            unsigned flags;             // For search jobs
+            std::string file_path;      // For load jobs
+            std::shared_ptr<const Source> source;  // For search jobs - keeps mmap alive
+            uint64_t generation;        // For cancellation when newer job arrives
         };
 
         // Results from completed background scan

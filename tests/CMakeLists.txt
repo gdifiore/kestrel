@@ -21,7 +21,7 @@ target_include_directories(line_index_test PRIVATE
     ../third_party/doctest
 )
 target_compile_options(line_index_test PRIVATE
-    $<$<CONFIG:Release>:-mavx2>
+    -mavx2
 )
 add_test(NAME line_index_test COMMAND line_index_test)
 
@@ -40,7 +40,7 @@ target_include_directories(search_controller_test PRIVATE
 )
 target_link_libraries(search_controller_test PRIVATE ${VECTORSCAN_TARGET} spdlog::spdlog)
 target_compile_options(search_controller_test PRIVATE
-    $<$<CONFIG:Release>:-mavx2>
+    -mavx2
 )
 add_test(NAME search_controller_test COMMAND search_controller_test)
 
