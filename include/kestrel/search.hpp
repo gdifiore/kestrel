@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -26,7 +27,7 @@ namespace kestrel
         struct Job {
             std::string pattern;
             unsigned flags;
-            std::span<const char> source;
+            std::shared_ptr<const Source> source;  // Shared ownership keeps mmap alive
             uint64_t generation;  // For cancellation when newer job arrives
         };
 
@@ -45,7 +46,7 @@ namespace kestrel
 
         void load_source(std::string_view path); // throws SourceError
         void clear_source();
-        bool has_source() const noexcept { return source_.has_value(); }
+        bool has_source() const noexcept { return source_ != nullptr; }
         std::span<const char> source_bytes() const;
         const LineIndex &line_index() const; // precondition: has_source()
 
@@ -79,7 +80,7 @@ namespace kestrel
         void worker_loop();
         void submit_job(std::string pattern, unsigned flags);
 
-        std::optional<Source> source_;
+        std::shared_ptr<Source> source_;
         std::optional<LineIndex> lines_;
 
         std::string pattern_;

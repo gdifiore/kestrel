@@ -110,6 +110,10 @@ namespace kestrel
 
                 if (key == "case_sensitive")
                     (void)parse_bool(val, in.case_sensitive);
+                else if (key == "dotall")
+                    (void)parse_bool(val, in.dotall);
+                else if (key == "multiline")
+                    (void)parse_bool(val, in.multiline);
                 else if (key == "show_line_nums")
                     (void)parse_bool(val, in.show_line_nums);
                 else if (key == "snap_scroll")
@@ -138,6 +142,8 @@ namespace kestrel
         }
 
         write_bool(config, "case_sensitive", in.case_sensitive);
+        write_bool(config, "dotall", in.dotall);
+        write_bool(config, "multiline", in.multiline);
         write_bool(config, "show_line_nums", in.show_line_nums);
         write_bool(config, "snap_scroll", in.snap_scroll);
         write_color(config, "color_match", in.color_match);

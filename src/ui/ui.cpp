@@ -42,8 +42,15 @@ namespace kestrel
                     scale = std::max(scale - 0.1f, 0.5f);
                 if (ImGui::MenuItem("Reset Zoom", "Ctrl+0"))
                     scale = 1.0f;
-                ImGui::Separator();
-                ImGui::MenuItem("ImGui Demo", nullptr, &in.show_demo);
+                if (ImGui::MenuItem("Dark Mode", nullptr, &in.is_dark_mode))
+                {
+                    if (in.is_dark_mode)
+                        ImGui::StyleColorsDark();
+                    else
+                        ImGui::StyleColorsLight();
+                }
+                // ImGui::Separator();
+                // ImGui::MenuItem("ImGui Demo", nullptr, &in.show_demo);
                 ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();
@@ -77,6 +84,16 @@ namespace kestrel
             ImGui::Checkbox("Aa", &in.case_sensitive);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Case sensitive");
+
+            ImGui::SameLine();
+            ImGui::Checkbox(".*", &in.dotall);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Dot matches newlines\n(. matches \\n and all characters)");
+
+            ImGui::SameLine();
+            ImGui::Checkbox("^$", &in.multiline);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Multiline anchors\n(^ and $ match line boundaries)");
 
             ImGui::SameLine();
             ImGui::Text("%d before", in.matches_before);
@@ -172,7 +189,9 @@ namespace kestrel
                 // Average over many glyphs: per-glyph rounding in CalcTextSize
                 // accumulates otherwise, and match rects drift off by ~1 char per ~40.
                 float char_width = ImGui::CalcTextSize(
-                    "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM").x / 50.0f;
+                                       "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM")
+                                       .x /
+                                   50.0f;
                 float line_height = ImGui::GetTextLineHeight();
 
                 if (filtered && view_count == 0 && search.compile_error().empty())
@@ -203,6 +222,15 @@ namespace kestrel
                         const char *p = source_bytes.data() + start;
 
                         ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+
+                        // Cursor line highlighting
+                        if (in.cursor_visible && line_idx == static_cast<int>(in.cursor_line)) {
+                            ImVec2 line_min(cursor_pos.x, cursor_pos.y);
+                            ImVec2 line_max(cursor_pos.x + ImGui::GetContentRegionAvail().x, cursor_pos.y + line_height);
+                            ImU32 cursor_color = ImGui::GetColorU32(ImGuiCol_HeaderHovered, 0.3f);
+                            ImGui::GetWindowDrawList()->AddRectFilled(line_min, line_max, cursor_color);
+                        }
+
                         std::span matches_in_range = search.matches_in_range(start, end);
 
                         // TODO: col_start/col_end are byte offsets. Correct for ASCII;
@@ -219,6 +247,44 @@ namespace kestrel
                         }
 
                         ImGui::TextUnformatted(p, p + (end - start));
+
+                        // Mouse click to position cursor
+                        if (ImGui::IsItemClicked()) {
+                            in.cursor_line = static_cast<size_t>(line_idx);
+                        }
+                    }
+                }
+
+                // Auto-scroll to keep cursor visible
+                if (in.cursor_visible && has_source) {
+                    const int cursor_line = static_cast<int>(in.cursor_line);
+
+                    // Find cursor position in current view (filtered or unfiltered)
+                    int cursor_view_pos = -1;
+                    if (filtered) {
+                        // Find cursor line in matched_lines array
+                        for (int i = 0; i < view_count; ++i) {
+                            if (static_cast<int>(matched[i]) == cursor_line) {
+                                cursor_view_pos = i;
+                                break;
+                            }
+                        }
+                    } else {
+                        // Unfiltered: view position = line number
+                        cursor_view_pos = cursor_line;
+                    }
+
+                    // Scroll to cursor if not visible or not found in filtered view
+                    if (cursor_view_pos == -1 ||
+                        cursor_view_pos < clipper.DisplayStart ||
+                        cursor_view_pos >= clipper.DisplayEnd) {
+
+                        if (cursor_view_pos >= 0) {
+                            float line_height = ImGui::GetTextLineHeightWithSpacing();
+                            float target_scroll = cursor_view_pos * line_height - (ImGui::GetWindowHeight() * 0.5f);
+                            target_scroll = std::max(0.0f, target_scroll);
+                            ImGui::SetScrollY(target_scroll);
+                        }
                     }
                 }
             }
@@ -232,7 +298,19 @@ namespace kestrel
             return;
         if (ImGui::Begin("Settings", &in.show_settings))
         {
+            ImGui::SeparatorText("Display");
             ImGui::Checkbox("Snap scroll to lines", &in.snap_scroll);
+
+            ImGui::SeparatorText("Regex Flags");
+            ImGui::Checkbox("Case sensitive", &in.case_sensitive);
+
+            ImGui::Checkbox("Dot matches newlines", &in.dotall);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Make . (dot) match newline characters\nPattern 'foo.*bar' can match across lines");
+
+            ImGui::Checkbox("Multiline anchors", &in.multiline);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Make ^ and $ match line boundaries\n^ = start of line, $ = end of line");
         }
         ImGui::End();
     }

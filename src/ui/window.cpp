@@ -43,7 +43,6 @@ namespace kestrel
 
             // configurable later
             ImGui::StyleColorsDark();
-            // ImGui::StyleColorsLight();
 
             ImGui_ImplGlfw_InitForOpenGL(handle_, true);
 

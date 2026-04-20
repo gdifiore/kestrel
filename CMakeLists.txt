@@ -5,6 +5,13 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Enable ASAN for Debug builds (applies to all targets including vectorscan)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer -g")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address")
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 # ---- GLFW ----
@@ -74,6 +81,8 @@ if(KESTREL_VENDOR_VECTORSCAN)
         -Wno-error=unused-but-set-variable
         -Wno-error=deprecated-declarations
     )
+    # Disable vectorscan debug prints by undefining DEBUG
+    add_compile_options(-UDEBUG)
     add_subdirectory(third_party/vectorscan EXCLUDE_FROM_ALL)
     set(VECTORSCAN_TARGET hs)
 else()
@@ -102,6 +111,7 @@ target_include_directories(kestrel PRIVATE
 target_link_libraries(kestrel PRIVATE imgui imguifiledialog ${VECTORSCAN_TARGET} spdlog::spdlog)
 target_compile_definitions(kestrel PRIVATE
     KESTREL_FONT_REGULAR="${KESTREL_FONT_DIR}/JetBrainsMono-Regular.ttf"
+    IMGUI_DISABLE_DEBUG_TOOLS
 )
 target_compile_options(kestrel PRIVATE
     -Wall -Wextra -Wpedantic
