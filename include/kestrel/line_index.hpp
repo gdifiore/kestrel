@@ -20,6 +20,12 @@ namespace kestrel {
       std::size_t line_start(std::size_t line) const { return line_starts_[line]; }
 
   private:
+      void scan_for_newlines(std::span<const char> buf);
+
+#if defined(__x86_64__) || defined(_M_X64)
+      void scan_for_newlines_simd(std::span<const char> buf);
+#endif
+
       std::vector<std::size_t> line_starts_;
       std::size_t              buf_size_ = 0;
   };

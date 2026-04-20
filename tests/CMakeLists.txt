@@ -20,6 +20,9 @@ target_include_directories(line_index_test PRIVATE
     ../include
     ../third_party/doctest
 )
+target_compile_options(line_index_test PRIVATE
+    $<$<CONFIG:Release>:-mavx2>
+)
 add_test(NAME line_index_test COMMAND line_index_test)
 
 add_executable(search_controller_test
@@ -36,6 +39,9 @@ target_include_directories(search_controller_test PRIVATE
     ${CMAKE_BINARY_DIR}/third_party/vectorscan
 )
 target_link_libraries(search_controller_test PRIVATE ${VECTORSCAN_TARGET} spdlog::spdlog)
+target_compile_options(search_controller_test PRIVATE
+    $<$<CONFIG:Release>:-mavx2>
+)
 add_test(NAME search_controller_test COMMAND search_controller_test)
 
 add_executable(parse_cli_test parse_cli_test.cpp ../src/util.cpp)
