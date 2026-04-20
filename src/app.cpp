@@ -70,14 +70,23 @@ namespace kestrel
             ui.quit_requested = true;
         }
 
-        // Escape - Clear search
+        // Escape - Clear search input or unfocus search box
         if (ImGui::IsKeyPressed(ImGuiKey_Escape))
         {
-            ui.query[0] = '\0'; // Clear search
+            if (ImGui::IsAnyItemActive())
+            {
+                // If search input is focused, unfocus it
+                ImGui::SetKeyboardFocusHere(-1); // Unfocus current item
+            }
+            else
+            {
+                // Otherwise clear search
+                ui.query[0] = '\0';
+            }
         }
 
-        // n - Go to next match
-        if (ImGui::IsKeyPressed(ImGuiKey_N) && !io.KeyShift)
+        // n - Go to next match (only when no input widget is focused)
+        if (ImGui::IsKeyPressed(ImGuiKey_N) && !io.KeyShift && !ImGui::IsAnyItemActive())
         {
             if (search.has_source() && !search.matches().empty())
             {
@@ -102,8 +111,8 @@ namespace kestrel
             }
         }
 
-        // Shift+N - Go to previous match
-        if (ImGui::IsKeyPressed(ImGuiKey_N) && io.KeyShift)
+        // Shift+N - Go to previous match (only when no input widget is focused)
+        if (ImGui::IsKeyPressed(ImGuiKey_N) && io.KeyShift && !ImGui::IsAnyItemActive())
         {
             if (search.has_source() && !search.matches().empty())
             {
