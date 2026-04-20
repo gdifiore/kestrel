@@ -1,11 +1,15 @@
 #include "kestrel/window.hpp"
 
 #include <string>
+#include <filesystem>
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 namespace kestrel
 {
@@ -30,6 +34,23 @@ namespace kestrel
                 glfwTerminate();
                 throw WindowError("glfwCreateWindow failed");
             }
+
+            const char* icon_path = "assets/kestrel-icon-16.png";
+            if (std::filesystem::exists(icon_path))
+            {
+                int width, height, channels;
+                unsigned char* pixels = stbi_load(icon_path, &width, &height, &channels, 4); // Force RGBA
+                if (pixels)
+                {
+                    GLFWimage icon;
+                    icon.width = width;
+                    icon.height = height;
+                    icon.pixels = pixels;
+                    glfwSetWindowIcon(handle_, 1, &icon);
+                    stbi_image_free(pixels);
+                }
+            }
+
             glfwSetWindowSizeLimits(handle_, scaled_w, scaled_h, GLFW_DONT_CARE, GLFW_DONT_CARE);
             glfwMakeContextCurrent(handle_);
             glfwSwapInterval(1); // Enable vsync

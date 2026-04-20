@@ -106,6 +106,7 @@ target_include_directories(kestrel PRIVATE
     include
     third_party/vectorscan/src
     ${CMAKE_BINARY_DIR}/third_party/vectorscan
+    third_party/ImGuiFileDialog/stb
 )
 target_link_libraries(kestrel PRIVATE imgui imguifiledialog ${VECTORSCAN_TARGET} spdlog::spdlog)
 target_compile_definitions(kestrel PRIVATE
