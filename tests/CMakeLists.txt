@@ -28,6 +28,7 @@ add_test(NAME line_index_test COMMAND line_index_test)
 add_executable(search_controller_test
     search_controller_test.cpp
     ../src/search.cpp
+    ../src/search_worker.cpp
     ../src/engine/scanner.cpp
     ../src/engine/source.cpp
     ../src/engine/line_index.cpp

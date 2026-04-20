@@ -96,6 +96,7 @@ add_executable(kestrel
     src/util.cpp
     src/config.cpp
     src/search.cpp
+    src/search_worker.cpp
     src/engine/scanner.cpp
     src/engine/source.cpp
     src/engine/line_index.cpp

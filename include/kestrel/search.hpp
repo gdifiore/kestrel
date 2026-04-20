@@ -3,16 +3,15 @@
 #include "kestrel/line_index.hpp"
 #include "kestrel/scanner.hpp"
 #include "kestrel/source.hpp"
+#include "kestrel/search_worker.hpp"
 
 #include <atomic>
-#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <vector>
 
 namespace kestrel
@@ -23,32 +22,6 @@ namespace kestrel
     // Uses generation-based cancellation to abort stale scans when pattern changes.
     class SearchController
     {
-        // Work submitted to background worker thread
-        enum class JobType
-        {
-            Search,
-            LoadSource
-        };
-
-        struct Job
-        {
-            JobType type;
-            std::string pattern;                  // For search jobs
-            unsigned flags;                       // For search jobs
-            std::string file_path;                // For load jobs
-            std::shared_ptr<const Source> source; // For search jobs - keeps mmap alive
-            uint64_t generation;                  // For cancellation when newer job arrives
-        };
-
-        // Results from completed background scan
-        struct Result
-        {
-            std::vector<Match> matches;
-            std::vector<std::size_t> matched_lines;
-            std::string error;   // Compilation error if any
-            double scan_ms;      // Time taken for this scan
-            uint64_t generation; // Which job produced this result
-        };
 
     public:
         SearchController();
@@ -91,8 +64,9 @@ namespace kestrel
         void wait_for_completion();
 
     private:
-        void worker_loop();
         void submit_job(std::string pattern, unsigned flags);
+        void on_load_complete(std::shared_ptr<Source> source, std::optional<LineIndex> lines, std::string error, double load_ms);
+        void on_search_complete(std::vector<Match>&& matches, std::vector<std::size_t>&& matched_lines, std::string&& error, double scan_ms);
 
         std::shared_ptr<Source> source_;
         std::optional<LineIndex> lines_;
@@ -108,18 +82,13 @@ namespace kestrel
         std::string compile_error_;
         double last_scan_ms_ = 0.0;
 
-        // Async worker state
-        mutable std::mutex mutex_;
-        std::condition_variable cv_;
-        std::thread worker_;
-        std::atomic<bool> stop_;
-        std::atomic<uint64_t> generation_;
+        // Background worker
+        std::unique_ptr<SearchWorker> worker_;
 
         // Protected by mutex_
+        mutable std::mutex mutex_;
         bool dirty_ = false;
         bool job_pending_ = false;
-        std::optional<Job> pending_job_;
-        std::optional<Result> latest_result_;
 
         // Async loading state (protected by mutex_)
         bool loading_ = false;
