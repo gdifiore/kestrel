@@ -40,6 +40,69 @@ namespace kestrel
         job_pending_ = false;
         pending_job_.reset();
         latest_result_.reset();
+        loading_ = false;
+        loading_error_.clear();
+    }
+
+    void SearchController::load_source_async(std::string_view path)
+    {
+        std::string path_copy(path); // Copy for thread safety
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            loading_ = true;
+            loading_error_.clear();
+        }
+
+        // Submit loading job to worker thread (reuse existing worker)
+        auto load_job = [this, path_copy = std::move(path_copy)]() {
+            try {
+                auto new_source = std::make_shared<Source>(Source::from_path(path_copy));
+                auto new_lines = LineIndex(new_source->bytes());
+
+                // Atomically update state
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    source_ = new_source;
+                    lines_.emplace(std::move(new_lines));
+
+                    // Clear search state
+                    pattern_.clear();
+                    matches_.clear();
+                    matched_lines_.clear();
+                    compile_error_.clear();
+                    dirty_ = false;
+                    job_pending_ = false;
+                    pending_job_.reset();
+                    latest_result_.reset();
+
+                    loading_ = false;
+                    loading_error_.clear();
+                }
+                spdlog::info("loaded {} ({} bytes)", path_copy, new_source->bytes().size());
+            }
+            catch (const SourceError& e) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                loading_ = false;
+                loading_error_ = e.what();
+                spdlog::error("async load_source failed: {} ({})", path_copy, e.what());
+            }
+        };
+
+        // Run on separate thread to avoid blocking worker
+        std::thread(load_job).detach();
+    }
+
+    bool SearchController::is_loading() const noexcept
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return loading_;
+    }
+
+    std::string SearchController::get_loading_error() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return loading_error_;
     }
 
     void SearchController::clear_source()

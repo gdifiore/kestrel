@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace kestrel
 {
@@ -17,20 +18,28 @@ namespace kestrel
         bool quit_requested = false;
         std::optional<std::string> pending_open;
 
+        // File loading state
+        bool loading = false;
+        std::string loading_path;
+        std::string loading_error;
+
+        // Recent files (most recent first)
+        std::vector<std::string> recent_files;
+
         size_t cursor_line = 0;     // Current line number
         size_t cursor_offset = 0;   // Byte offset in source
         bool cursor_visible = true; // Show cursor highlight
 
         char query[512] = {};
         bool case_sensitive = false;
-        bool dotall = false;
+        bool dotall = true;
         bool multiline = false;
         bool show_line_nums = true;
         bool show_settings = false;
         bool snap_scroll = true;
         bool is_dark_mode = true;
         ImVec4 color_match = ImVec4(1.00f, 0.85f, 0.20f, 1.00f);
-        ImVec4 color_scope = ImVec4(0.30f, 0.65f, 1.00f, 1.00f);
+        ImVec4 color_scope = ImVec4(0.44f, 0.66f, 0.84f, 1.00f); // Matches previous HeaderHovered cursor color
 
         float search_bar_h = 0.0f;
 

@@ -122,6 +122,10 @@ namespace kestrel
                     (void)parse_color(val, in.color_match);
                 else if (key == "color_scope")
                     (void)parse_color(val, in.color_scope);
+                else if (key.starts_with("recent_file_")) {
+                    // Parse recent_file_0, recent_file_1, etc.
+                    in.recent_files.emplace_back(val);
+                }
             }
         }
     }
@@ -149,6 +153,11 @@ namespace kestrel
         write_color(config, "color_match", in.color_match);
         write_color(config, "color_scope", in.color_scope);
 
+        // Save recent files (limit to 10)
+        for (size_t i = 0; i < std::min(in.recent_files.size(), size_t(10)); ++i) {
+            config << "recent_file_" << i << " = " << in.recent_files[i] << "\n";
+        }
+
         config.close();
 
         if (std::rename(temp.c_str(), destination.c_str()) == 0)
@@ -156,6 +165,36 @@ namespace kestrel
         spdlog::warn("save_config: rename failed {} -> {}", temp, destination.string());
         std::remove(temp.c_str()); // cleanup on rename failure
         return false;
+    }
+
+    void add_recent_file(UiInputs &ui, const std::string &path)
+    {
+        // Remove if already exists
+        ui.recent_files.erase(
+            std::remove(ui.recent_files.begin(), ui.recent_files.end(), path),
+            ui.recent_files.end()
+        );
+
+        // Add to front
+        ui.recent_files.insert(ui.recent_files.begin(), path);
+
+        // Limit to 10 files
+        if (ui.recent_files.size() > 10) {
+            ui.recent_files.resize(10);
+        }
+    }
+
+    void cleanup_recent_files(UiInputs &ui)
+    {
+        // Remove files that no longer exist
+        ui.recent_files.erase(
+            std::remove_if(ui.recent_files.begin(), ui.recent_files.end(),
+                [](const std::string &path) {
+                    return !std::filesystem::exists(path);
+                }
+            ),
+            ui.recent_files.end()
+        );
     }
 
 } // namespace kestrel

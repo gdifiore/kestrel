@@ -61,23 +61,22 @@ namespace kestrel
         spdlog::info("kestrel start");
 
         SearchController search;
+        UiInputs ui;
+
         auto load_path = [&](std::string_view p) -> bool
         {
             if (!is_valid_file_path(p))
             {
                 spdlog::warn("reject path: {}", p);
+                ui.loading_error = "Invalid file path";
                 return false;
             }
-            try
-            {
-                search.load_source(p);
-            }
-            catch (const SourceError &e)
-            {
-                spdlog::error("load_source failed: {} ({})", p, e.what());
-                return false;
-            }
-            spdlog::info("loaded {} ({} bytes)", p, search.source_bytes().size());
+
+            // Start async loading
+            ui.loading = true;
+            ui.loading_path = p;
+            ui.loading_error.clear();
+            search.load_source_async(p);
             return true;
         };
 
@@ -88,8 +87,6 @@ namespace kestrel
         w.on_file_drop([&](std::span<const char *> paths)
                        {
             if (!paths.empty()) load_path(paths[0]); });
-
-        UiInputs ui;
         load_config(ui);
         while (!w.should_close() && !ui.quit_requested)
         {
@@ -103,6 +100,22 @@ namespace kestrel
 
             search.set_pattern(ui.query, flags);
             search.tick(glfwGetTime());
+
+            // Update loading state from SearchController
+            bool was_loading = ui.loading;
+            ui.loading = search.is_loading();
+
+            if (was_loading && !ui.loading) {
+                // Loading just finished
+                std::string error = search.get_loading_error();
+                if (!error.empty()) {
+                    ui.loading_error = error;
+                } else if (search.has_source()) {
+                    // Successfully loaded - add to recent files
+                    add_recent_file(ui, ui.loading_path);
+                    ui.loading_error.clear();
+                }
+            }
 
             handle_cursor_input(ui, search);
 

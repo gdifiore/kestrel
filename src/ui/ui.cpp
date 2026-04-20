@@ -1,10 +1,12 @@
 #include "kestrel/ui.hpp"
 
+#include "kestrel/config.hpp"
 #include "kestrel/line_index.hpp"
 #include "kestrel/search.hpp"
 
 #include <cmath>
 #include <cstddef>
+#include <filesystem>
 #include <span>
 
 #include <imgui.h>
@@ -26,6 +28,37 @@ namespace kestrel
                     ImGuiFileDialog::Instance()->OpenDialog(
                         "kestrel_open", "Open file", ".*,.txt,.log,.md", cfg);
                 }
+
+                // Recent files submenu
+                if (!in.recent_files.empty() && ImGui::BeginMenu("Recent Files"))
+                {
+                    // Clean up non-existent files first
+                    cleanup_recent_files(in);
+
+                    for (size_t i = 0; i < in.recent_files.size(); ++i) {
+                        const std::string &path = in.recent_files[i];
+
+                        // Show just filename, full path in tooltip
+                        std::filesystem::path file_path(path);
+                        std::string display_name = file_path.filename().string();
+
+                        if (ImGui::MenuItem(display_name.c_str())) {
+                            in.pending_open = path;
+                        }
+
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("%s", path.c_str());
+                        }
+                    }
+
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Clear Recent")) {
+                        in.recent_files.clear();
+                    }
+
+                    ImGui::EndMenu();
+                }
+
                 ImGui::Separator();
                 if (ImGui::MenuItem("Quit", "Ctrl+Q"))
                 {
@@ -118,9 +151,9 @@ namespace kestrel
             ImGui::TextUnformatted("match");
 
             ImGui::SameLine();
-            ImGui::ColorEdit4("scope", &in.color_scope.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+            ImGui::ColorEdit4("cursor", &in.color_scope.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
             ImGui::SameLine();
-            ImGui::TextUnformatted("scope");
+            ImGui::TextUnformatted("cursor");
 
             ImGui::SameLine();
             ImGui::Checkbox("line #", &in.show_line_nums);
@@ -175,9 +208,43 @@ namespace kestrel
             const bool has_source = search.has_source();
             auto source_bytes = has_source ? search.source_bytes() : std::span<const char>{};
 
-            if (!has_source || source_bytes.empty())
+            if (in.loading)
             {
-                ImGui::TextDisabled("No file loaded. Drop a file or use File > Open...");
+                // Show loading indicator
+                ImGui::Text("Loading file: %s", in.loading_path.c_str());
+
+                // Animated spinner
+                static float spinner_angle = 0.0f;
+                spinner_angle += 0.1f;
+                if (spinner_angle >= 2.0f * 3.14159f) spinner_angle = 0.0f;
+
+                ImDrawList* draw_list = ImGui::GetWindowDrawList();
+                ImVec2 pos = ImGui::GetCursorScreenPos();
+                ImVec2 center = ImVec2(pos.x + 20, pos.y + 10);
+                float radius = 8.0f;
+                ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
+
+                for (int i = 0; i < 12; i++) {
+                    float angle = spinner_angle + (i * 2.0f * 3.14159f / 12.0f);
+                    float alpha = (12 - i) / 12.0f;
+                    ImU32 fade_color = (color & 0x00FFFFFF) | (IM_COL32_A_MASK & ImU32(alpha * 255) << IM_COL32_A_SHIFT);
+                    ImVec2 dot_pos = ImVec2(center.x + radius * cosf(angle), center.y + radius * sinf(angle));
+                    draw_list->AddCircleFilled(dot_pos, 2.0f, fade_color);
+                }
+
+                ImGui::Dummy(ImVec2(40, 20)); // Reserve space for spinner
+
+                if (!in.loading_error.empty()) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Error: %s", in.loading_error.c_str());
+                }
+            }
+            else if (!has_source || source_bytes.empty())
+            {
+                if (!in.loading_error.empty()) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Failed to load file: %s", in.loading_error.c_str());
+                } else {
+                    ImGui::TextDisabled("No file loaded. Drop a file or use File > Open...");
+                }
             }
             else
             {
@@ -210,7 +277,12 @@ namespace kestrel
                                                  : i;
                         if (in.show_line_nums)
                         {
-                            ImGui::TextDisabled("%7d ", line_idx + 1);
+                            if (in.cursor_visible && line_idx == static_cast<int>(in.cursor_line)) {
+                                // Highlight cursor line number with cursor color
+                                ImGui::TextColored(in.color_scope, "%7d ", line_idx + 1);
+                            } else {
+                                ImGui::TextDisabled("%7d ", line_idx + 1);
+                            }
                             ImGui::SameLine();
                         }
                         std::size_t start = lines.line_start(line_idx);
@@ -227,7 +299,9 @@ namespace kestrel
                         if (in.cursor_visible && line_idx == static_cast<int>(in.cursor_line)) {
                             ImVec2 line_min(cursor_pos.x, cursor_pos.y);
                             ImVec2 line_max(cursor_pos.x + ImGui::GetContentRegionAvail().x, cursor_pos.y + line_height);
-                            ImU32 cursor_color = ImGui::GetColorU32(ImGuiCol_HeaderHovered, 0.3f);
+                            ImVec4 cursor_color_with_alpha = in.color_scope;
+                            cursor_color_with_alpha.w = 0.3f; // Semi-transparent background
+                            ImU32 cursor_color = ImGui::GetColorU32(cursor_color_with_alpha);
                             ImGui::GetWindowDrawList()->AddRectFilled(line_min, line_max, cursor_color);
                         }
 

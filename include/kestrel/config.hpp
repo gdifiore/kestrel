@@ -16,4 +16,8 @@ namespace kestrel
 
 	bool save_config(const UiInputs &in);
 
+	// Recent files management
+	void add_recent_file(UiInputs &ui, const std::string &path);
+	void cleanup_recent_files(UiInputs &ui);
+
 } // namespace kestrel

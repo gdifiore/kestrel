@@ -45,6 +45,9 @@ namespace kestrel
         ~SearchController();
 
         void load_source(std::string_view path); // throws SourceError
+        void load_source_async(std::string_view path); // async version
+        bool is_loading() const noexcept;
+        std::string get_loading_error() const;
         void clear_source();
         bool has_source() const noexcept { return source_ != nullptr; }
         std::span<const char> source_bytes() const;
@@ -106,6 +109,10 @@ namespace kestrel
         bool job_pending_ = false;
         std::optional<Job> pending_job_;
         std::optional<Result> latest_result_;
+
+        // Async loading state (protected by mutex_)
+        bool loading_ = false;
+        std::string loading_error_;
     };
 
 } // namespace kestrel
