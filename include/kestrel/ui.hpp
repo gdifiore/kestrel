@@ -14,7 +14,6 @@ namespace kestrel
     // (matches, source bytes, compile errors) is read live from SearchController.
     struct UiInputs
     {
-        bool show_demo = false;
         bool quit_requested = false;
         std::optional<std::string> pending_open;
 
@@ -35,6 +34,7 @@ namespace kestrel
         bool cursor_visible = true; // Show cursor highlight
 
         char query[512] = {};
+        bool display_only_filtered_lines = false;
         bool case_sensitive = false;
         bool dotall = true;
         bool multiline = false;

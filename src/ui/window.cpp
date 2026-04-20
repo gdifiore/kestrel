@@ -37,7 +37,7 @@ namespace kestrel
             ImGui::CreateContext();
 
 #ifdef KESTREL_FONT_REGULAR
-            ImGuiIO& io = ImGui::GetIO();
+            ImGuiIO &io = ImGui::GetIO();
             io.Fonts->AddFontFromFileTTF(KESTREL_FONT_REGULAR, 15.0f * main_scale);
 #endif
 

@@ -30,8 +30,6 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
 ```
 
-**Note:** vectorscan translation units can consume 2–4 GB RAM each. Keep `-j` small (4 or lower) on machines with ≤32 GB RAM to avoid OOM lockups.
-
 ## Run
 
 ```bash
@@ -53,5 +51,3 @@ KESTREL_LOG=debug ./build/kestrel 2> kestrel.log
 ```
 
 Valid `KESTREL_LOG` values: `trace`, `debug`, `info` (default), `warn`, `err`, `off`.
-
-Example log taken from [logpai/loghub](https://github.com/logpai/loghub).

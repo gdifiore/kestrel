@@ -90,7 +90,8 @@ namespace kestrel
     {
         auto path = config_path();
         std::ifstream config(path);
-        if (!config) {
+        if (!config)
+        {
             spdlog::debug("no config at {}", path.string());
             return;
         }
@@ -122,7 +123,8 @@ namespace kestrel
                     (void)parse_color(val, in.color_match);
                 else if (key == "color_scope")
                     (void)parse_color(val, in.color_scope);
-                else if (key.starts_with("recent_file_")) {
+                else if (key.starts_with("recent_file_"))
+                {
                     // Parse recent_file_0, recent_file_1, etc.
                     in.recent_files.emplace_back(val);
                 }
@@ -134,13 +136,14 @@ namespace kestrel
     {
         auto destination = config_path();
         auto temp = std::string(destination) + ".tmp";
-        
+
         std::error_code ec;
         std::filesystem::create_directories(destination.parent_path(), ec);
 
         std::ofstream config(temp);
 
-        if (!config) {
+        if (!config)
+        {
             spdlog::warn("save_config: open failed {}", temp);
             return false;
         }
@@ -154,7 +157,8 @@ namespace kestrel
         write_color(config, "color_scope", in.color_scope);
 
         // Save recent files (limit to 10)
-        for (size_t i = 0; i < std::min(in.recent_files.size(), size_t(10)); ++i) {
+        for (size_t i = 0; i < std::min(in.recent_files.size(), size_t(10)); ++i)
+        {
             config << "recent_file_" << i << " = " << in.recent_files[i] << "\n";
         }
 
@@ -172,14 +176,14 @@ namespace kestrel
         // Remove if already exists
         ui.recent_files.erase(
             std::remove(ui.recent_files.begin(), ui.recent_files.end(), path),
-            ui.recent_files.end()
-        );
+            ui.recent_files.end());
 
         // Add to front
         ui.recent_files.insert(ui.recent_files.begin(), path);
 
         // Limit to 10 files
-        if (ui.recent_files.size() > 10) {
+        if (ui.recent_files.size() > 10)
+        {
             ui.recent_files.resize(10);
         }
     }
@@ -189,12 +193,11 @@ namespace kestrel
         // Remove files that no longer exist
         ui.recent_files.erase(
             std::remove_if(ui.recent_files.begin(), ui.recent_files.end(),
-                [](const std::string &path) {
-                    return !std::filesystem::exists(path);
-                }
-            ),
-            ui.recent_files.end()
-        );
+                           [](const std::string &path)
+                           {
+                               return !std::filesystem::exists(path);
+                           }),
+            ui.recent_files.end());
     }
 
 } // namespace kestrel

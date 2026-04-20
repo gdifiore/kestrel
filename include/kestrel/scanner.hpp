@@ -14,7 +14,7 @@ namespace kestrel
     struct Match
     {
         size_t start, end;
-        
+
         bool operator<(const Match &m) const
         {
             return start < m.start;
@@ -34,7 +34,7 @@ namespace kestrel
         // aborts the scan when its value differs from my_gen. Used to stop a stale
         // background scan when a newer pattern supersedes it.
         std::vector<Match> scan(std::string_view buf,
-                                const std::atomic<uint64_t>* cancel_counter = nullptr,
+                                const std::atomic<uint64_t> *cancel_counter = nullptr,
                                 uint64_t my_gen = 0) const;
 
     private:

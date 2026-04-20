@@ -60,7 +60,7 @@ namespace kestrel
                 .flags = 0,
                 .file_path = std::move(path_copy),
                 .source = {},
-                .generation = 0  // Generation not used for load jobs
+                .generation = 0 // Generation not used for load jobs
             };
             job_pending_ = true;
         }
@@ -238,9 +238,11 @@ namespace kestrel
                 continue;
 
             // Handle different job types
-            if (job->type == JobType::LoadSource) {
+            if (job->type == JobType::LoadSource)
+            {
                 // Handle file loading job
-                try {
+                try
+                {
                     auto new_source = std::make_shared<Source>(Source::from_path(job->file_path));
                     auto new_lines = LineIndex(new_source->bytes());
 
@@ -265,13 +267,16 @@ namespace kestrel
                     }
                     spdlog::info("loaded {} ({} bytes)", job->file_path, new_source->bytes().size());
                 }
-                catch (const SourceError& e) {
+                catch (const SourceError &e)
+                {
                     std::lock_guard<std::mutex> lock(mutex_);
                     loading_ = false;
                     loading_error_ = e.what();
                     spdlog::error("async load_source failed: {} ({})", job->file_path, e.what());
                 }
-            } else if (job->type == JobType::Search) {
+            }
+            else if (job->type == JobType::Search)
+            {
                 // Handle search job
                 auto t0 = std::chrono::steady_clock::now();
                 Result result{
@@ -284,7 +289,8 @@ namespace kestrel
                 try
                 {
                     // Reuse scanner if pattern and flags match (avoids expensive recompilation)
-                    if (!scanner || job->pattern != cached_pattern || job->flags != cached_flags) {
+                    if (!scanner || job->pattern != cached_pattern || job->flags != cached_flags)
+                    {
                         scanner.emplace(job->pattern, job->flags);
                         cached_pattern = job->pattern;
                         cached_flags = job->flags;
@@ -325,7 +331,7 @@ namespace kestrel
                 {
                     result.error = e.what();
                     spdlog::error("worker scan failed: {}", result.error);
-                    scanner.reset(); // Clear failed scanner
+                    scanner.reset();        // Clear failed scanner
                     cached_pattern.clear(); // Clear cache
                 }
 
@@ -361,6 +367,7 @@ namespace kestrel
         auto it = std::lower_bound(matches_.begin(), matches_.end(), offset,
                                    [](const Match &m, std::size_t o)
                                    { return m.start < o; });
+
         return static_cast<std::size_t>(it - matches_.begin());
     }
 

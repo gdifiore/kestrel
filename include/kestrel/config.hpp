@@ -6,18 +6,18 @@
 namespace kestrel
 {
 
-	struct UiInputs;
+    struct UiInputs;
 
-	// Path to persisted config file. Honors $XDG_CONFIG_HOME, falls back to
-	// $HOME/.config/kestrel/config.ini. Does not create parent dirs.
-	std::filesystem::path config_path();
+    // Path to persisted config file. Honors $XDG_CONFIG_HOME, falls back to
+    // $HOME/.config/kestrel/config.ini. Does not create parent dirs.
+    std::filesystem::path config_path();
 
-	void load_config(UiInputs &in);
+    void load_config(UiInputs &in);
 
-	bool save_config(const UiInputs &in);
+    bool save_config(const UiInputs &in);
 
-	// Recent files management
-	void add_recent_file(UiInputs &ui, const std::string &path);
-	void cleanup_recent_files(UiInputs &ui);
+    // Recent files management
+    void add_recent_file(UiInputs &ui, const std::string &path);
+    void cleanup_recent_files(UiInputs &ui);
 
 } // namespace kestrel

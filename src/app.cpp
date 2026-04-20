@@ -53,41 +53,52 @@ namespace kestrel
         ImGuiIO &io = ImGui::GetIO();
 
         // Ctrl+F - Focus search input
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F)) {
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F))
+        {
             ui.focus_search = true;
         }
 
         // Ctrl+O - Open file dialog
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O)) {
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O))
+        {
             ui.trigger_open_dialog = true;
         }
 
         // Ctrl+Q - Quit application
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Q)) {
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Q))
+        {
             ui.quit_requested = true;
         }
 
         // Escape - Clear search
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            if (ui.query[0] != '\0') {
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+        {
+            if (ui.query[0] != '\0')
+            {
                 ui.query[0] = '\0'; // Clear search
             }
         }
 
         // n - Go to next match
-        if (ImGui::IsKeyPressed(ImGuiKey_N) && !io.KeyShift) {
-            if (search.has_source() && !search.matches().empty()) {
+        if (ImGui::IsKeyPressed(ImGuiKey_N) && !io.KeyShift)
+        {
+            if (search.has_source() && !search.matches().empty())
+            {
                 const auto &matches = search.matches();
                 auto cursor_offset = search.line_index().line_start(ui.cursor_line);
 
                 // Find next match after cursor
                 auto it = std::upper_bound(matches.begin(), matches.end(), cursor_offset,
-                    [](size_t offset, const Match &m) { return offset < m.start; });
+                                           [](size_t offset, const Match &m)
+                                           { return offset < m.start; });
 
-                if (it != matches.end()) {
+                if (it != matches.end())
+                {
                     // Found next match
                     ui.cursor_line = search.line_index().line_of(it->start);
-                } else if (!matches.empty()) {
+                }
+                else if (!matches.empty())
+                {
                     // Wrap to first match
                     ui.cursor_line = search.line_index().line_of(matches[0].start);
                 }
@@ -95,20 +106,26 @@ namespace kestrel
         }
 
         // Shift+N - Go to previous match
-        if (ImGui::IsKeyPressed(ImGuiKey_N) && io.KeyShift) {
-            if (search.has_source() && !search.matches().empty()) {
+        if (ImGui::IsKeyPressed(ImGuiKey_N) && io.KeyShift)
+        {
+            if (search.has_source() && !search.matches().empty())
+            {
                 const auto &matches = search.matches();
                 auto cursor_offset = search.line_index().line_start(ui.cursor_line);
 
                 // Find previous match before cursor
                 auto it = std::lower_bound(matches.begin(), matches.end(), cursor_offset,
-                    [](const Match &m, size_t offset) { return m.start < offset; });
+                                           [](const Match &m, size_t offset)
+                                           { return m.start < offset; });
 
-                if (it != matches.begin()) {
+                if (it != matches.begin())
+                {
                     // Found previous match
                     --it;
                     ui.cursor_line = search.line_index().line_of(it->start);
-                } else if (!matches.empty()) {
+                }
+                else if (!matches.empty())
+                {
                     // Wrap to last match
                     ui.cursor_line = search.line_index().line_of(matches.back().start);
                 }
@@ -155,7 +172,7 @@ namespace kestrel
         Window w("kestrel", 800, 600);
         w.on_file_drop([&](std::span<const char *> paths)
                        {
-            if (!paths.empty()) load_path(paths[0]); });
+        if (!paths.empty()) load_path(paths[0]); });
         load_config(ui);
         while (!w.should_close() && !ui.quit_requested)
         {
@@ -174,12 +191,16 @@ namespace kestrel
             bool was_loading = ui.loading;
             ui.loading = search.is_loading();
 
-            if (was_loading && !ui.loading) {
+            if (was_loading && !ui.loading)
+            {
                 // Loading just finished
                 std::string error = search.get_loading_error();
-                if (!error.empty()) {
+                if (!error.empty())
+                {
                     ui.loading_error = error;
-                } else if (search.has_source()) {
+                }
+                else if (search.has_source())
+                {
                     // Successfully loaded - add to recent files
                     add_recent_file(ui, ui.loading_path);
                     ui.loading_error.clear();
@@ -188,9 +209,6 @@ namespace kestrel
 
             handle_cursor_input(ui, search);
             handle_keyboard_shortcuts(ui, search);
-
-            ui.matches_before = static_cast<int>(search.matches_before(0));
-            ui.matches_after = static_cast<int>(search.matches_after(0));
 
             w.begin_frame();
             draw_ui(ui, search);
