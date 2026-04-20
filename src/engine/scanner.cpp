@@ -82,6 +82,8 @@ namespace kestrel
                                      uint64_t my_gen) const
     {
         std::vector<Match> out;
+        // Pre-reserve based on buffer size - estimate 1 match per 10KB for typical patterns
+        out.reserve(buf.size() / 10240 + 100);
         ScanCtx ctx{&out, cancel_counter, my_gen};
 
         // hs_scan's length is unsigned int (4 GB cap). Clip and warn so larger
