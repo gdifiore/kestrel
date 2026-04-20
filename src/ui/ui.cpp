@@ -88,6 +88,15 @@ namespace kestrel
             }
             ImGui::EndMainMenuBar();
         }
+
+        // Handle keyboard shortcuts for file dialog
+        if (in.trigger_open_dialog) {
+            IGFD::FileDialogConfig cfg;
+            cfg.path = ".";
+            ImGuiFileDialog::Instance()->OpenDialog(
+                "kestrel_open", "Open file", ".*,.txt,.log,.md", cfg);
+            in.trigger_open_dialog = false;
+        }
     }
 
     static void draw_search_bar(UiInputs &in, const SearchController &search)
@@ -107,6 +116,13 @@ namespace kestrel
         {
             const float gear_w = ImGui::CalcTextSize(" * ").x + ImGui::GetStyle().FramePadding.x * 2.0f;
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - gear_w - ImGui::GetStyle().ItemSpacing.x);
+
+            // Handle Ctrl+F focus
+            if (in.focus_search) {
+                ImGui::SetKeyboardFocusHere();
+                in.focus_search = false;
+            }
+
             ImGui::InputTextWithHint("##query", "search...", in.query, IM_ARRAYSIZE(in.query));
             ImGui::SameLine();
             if (ImGui::Button(" * "))
@@ -158,7 +174,7 @@ namespace kestrel
             ImGui::SameLine();
             ImGui::Checkbox("line #", &in.show_line_nums);
 
-            const char *hint = "Ctrl+F  Ctrl+O  Ctrl+Q";
+            const char *hint = "Ctrl+F Ctrl+O n/N Esc";
             float hint_w = ImGui::CalcTextSize(hint).x;
             ImGui::SameLine(ImGui::GetWindowWidth() - hint_w - ImGui::GetStyle().WindowPadding.x);
             ImGui::TextDisabled("%s", hint);
@@ -385,6 +401,48 @@ namespace kestrel
             ImGui::Checkbox("Multiline anchors", &in.multiline);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Make ^ and $ match line boundaries\n^ = start of line, $ = end of line");
+
+            ImGui::SeparatorText("Keyboard Shortcuts");
+
+            // Create two-column layout for shortcuts
+            if (ImGui::BeginTable("shortcuts", 2, ImGuiTableFlags_SizingFixedFit)) {
+                ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
+
+                ImGui::TableNextRow(); ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+F");
+                ImGui::TableNextColumn(); ImGui::Text("Focus search box");
+
+                ImGui::TableNextRow(); ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+O");
+                ImGui::TableNextColumn(); ImGui::Text("Open file dialog");
+
+                ImGui::TableNextRow(); ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+Q");
+                ImGui::TableNextColumn(); ImGui::Text("Quit application");
+
+                ImGui::TableNextRow(); ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Escape");
+                ImGui::TableNextColumn(); ImGui::Text("Clear search");
+
+                ImGui::TableNextRow(); ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "n");
+                ImGui::TableNextColumn(); ImGui::Text("Next match");
+
+                ImGui::TableNextRow(); ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Shift+N");
+                ImGui::TableNextColumn(); ImGui::Text("Previous match");
+
+                ImGui::TableNextRow(); ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "↑↓ PgUp/Dn");
+                ImGui::TableNextColumn(); ImGui::Text("Navigate lines");
+
+                ImGui::TableNextRow(); ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Home/End");
+                ImGui::TableNextColumn(); ImGui::Text("First/last line");
+
+                ImGui::EndTable();
+            }
         }
         ImGui::End();
     }

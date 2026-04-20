@@ -9,6 +9,7 @@
 #include <hs.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <iostream>
 
 namespace kestrel
@@ -45,6 +46,74 @@ namespace kestrel
         ui.cursor_offset = lines.line_start(ui.cursor_line);
         ui.matches_before = search.matches_before(ui.cursor_offset);
         ui.matches_after = search.matches_after(ui.cursor_offset);
+    }
+
+    static void handle_keyboard_shortcuts(UiInputs &ui, const SearchController &search)
+    {
+        ImGuiIO &io = ImGui::GetIO();
+
+        // Ctrl+F - Focus search input
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F)) {
+            ui.focus_search = true;
+        }
+
+        // Ctrl+O - Open file dialog
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O)) {
+            ui.trigger_open_dialog = true;
+        }
+
+        // Ctrl+Q - Quit application
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Q)) {
+            ui.quit_requested = true;
+        }
+
+        // Escape - Clear search
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            if (ui.query[0] != '\0') {
+                ui.query[0] = '\0'; // Clear search
+            }
+        }
+
+        // n - Go to next match
+        if (ImGui::IsKeyPressed(ImGuiKey_N) && !io.KeyShift) {
+            if (search.has_source() && !search.matches().empty()) {
+                const auto &matches = search.matches();
+                auto cursor_offset = search.line_index().line_start(ui.cursor_line);
+
+                // Find next match after cursor
+                auto it = std::upper_bound(matches.begin(), matches.end(), cursor_offset,
+                    [](size_t offset, const Match &m) { return offset < m.start; });
+
+                if (it != matches.end()) {
+                    // Found next match
+                    ui.cursor_line = search.line_index().line_of(it->start);
+                } else if (!matches.empty()) {
+                    // Wrap to first match
+                    ui.cursor_line = search.line_index().line_of(matches[0].start);
+                }
+            }
+        }
+
+        // Shift+N - Go to previous match
+        if (ImGui::IsKeyPressed(ImGuiKey_N) && io.KeyShift) {
+            if (search.has_source() && !search.matches().empty()) {
+                const auto &matches = search.matches();
+                auto cursor_offset = search.line_index().line_start(ui.cursor_line);
+
+                // Find previous match before cursor
+                auto it = std::lower_bound(matches.begin(), matches.end(), cursor_offset,
+                    [](const Match &m, size_t offset) { return m.start < offset; });
+
+                if (it != matches.begin()) {
+                    // Found previous match
+                    --it;
+                    ui.cursor_line = search.line_index().line_of(it->start);
+                } else if (!matches.empty()) {
+                    // Wrap to last match
+                    ui.cursor_line = search.line_index().line_of(matches.back().start);
+                }
+            }
+        }
     }
 
     int run_app(int argc, char **argv)
@@ -118,6 +187,7 @@ namespace kestrel
             }
 
             handle_cursor_input(ui, search);
+            handle_keyboard_shortcuts(ui, search);
 
             ui.matches_before = static_cast<int>(search.matches_before(0));
             ui.matches_after = static_cast<int>(search.matches_after(0));

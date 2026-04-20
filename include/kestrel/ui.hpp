@@ -18,6 +18,10 @@ namespace kestrel
         bool quit_requested = false;
         std::optional<std::string> pending_open;
 
+        // Keyboard shortcut triggers
+        bool focus_search = false;
+        bool trigger_open_dialog = false;
+
         // File loading state
         bool loading = false;
         std::string loading_path;
