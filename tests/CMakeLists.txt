@@ -50,3 +50,12 @@ target_include_directories(parse_cli_test PRIVATE
     ../third_party/doctest
 )
 add_test(NAME parse_cli_test COMMAND parse_cli_test)
+
+add_executable(config_test config_test.cpp ../src/config.cpp)
+target_include_directories(config_test PRIVATE
+    ../include
+    ../third_party/doctest
+    ../third_party/imgui
+)
+target_link_libraries(config_test PRIVATE spdlog::spdlog)
+add_test(NAME config_test COMMAND config_test)
