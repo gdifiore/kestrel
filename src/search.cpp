@@ -176,6 +176,8 @@ namespace kestrel
     void SearchController::worker_loop()
     {
         std::optional<Scanner> scanner;
+        std::string cached_pattern;
+        unsigned cached_flags = 0;
 
         while (true)
         {
@@ -206,7 +208,12 @@ namespace kestrel
 
             try
             {
-                scanner.emplace(job->pattern, job->flags);
+                // Reuse scanner if pattern and flags match (avoids expensive recompilation)
+                if (!scanner || job->pattern != cached_pattern || job->flags != cached_flags) {
+                    scanner.emplace(job->pattern, job->flags);
+                    cached_pattern = job->pattern;
+                    cached_flags = job->flags;
+                }
                 auto span = job->source->bytes();
                 spdlog::debug("worker scanning pattern '{}' on {} bytes", job->pattern, span.size());
                 result.matches = scanner->scan(
@@ -244,6 +251,7 @@ namespace kestrel
                 result.error = e.what();
                 spdlog::error("worker scan failed: {}", result.error);
                 scanner.reset(); // Clear failed scanner
+                cached_pattern.clear(); // Clear cache
             }
 
             auto t1 = std::chrono::steady_clock::now();
