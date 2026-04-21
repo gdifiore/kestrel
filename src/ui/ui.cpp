@@ -32,14 +32,14 @@ namespace kestrel
                 }
 
                 // Recent files submenu
-                if (!in.recent_files.empty() && ImGui::BeginMenu("Recent Files"))
+                if (!in.file.recent_files.empty() && ImGui::BeginMenu("Recent Files"))
                 {
                     // Clean up non-existent files first
                     cleanup_recent_files(in);
 
-                    for (size_t i = 0; i < in.recent_files.size(); ++i)
+                    for (size_t i = 0; i < in.file.recent_files.size(); ++i)
                     {
-                        const std::string &path = in.recent_files[i];
+                        const std::string &path = in.file.recent_files[i];
 
                         // Show just filename, full path in tooltip
                         std::filesystem::path file_path(path);
@@ -47,7 +47,7 @@ namespace kestrel
 
                         if (ImGui::MenuItem(display_name.c_str()))
                         {
-                            in.pending_open = path;
+                            in.file.pending_open = path;
                         }
 
                         if (ImGui::IsItemHovered())
@@ -59,7 +59,7 @@ namespace kestrel
                     ImGui::Separator();
                     if (ImGui::MenuItem("Clear Recent"))
                     {
-                        in.recent_files.clear();
+                        in.file.recent_files.clear();
                     }
 
                     ImGui::EndMenu();
@@ -81,9 +81,9 @@ namespace kestrel
                     scale = std::max(scale - 0.1f, 0.5f);
                 if (ImGui::MenuItem("Reset Zoom", "Ctrl+0"))
                     scale = 1.0f;
-                if (ImGui::MenuItem("Dark Mode", nullptr, &in.is_dark_mode))
+                if (ImGui::MenuItem("Dark Mode", nullptr, &in.view.is_dark_mode))
                 {
-                    if (in.is_dark_mode)
+                    if (in.view.is_dark_mode)
                         ImGui::StyleColorsDark();
                     else
                         ImGui::StyleColorsLight();
@@ -94,13 +94,13 @@ namespace kestrel
         }
 
         // Handle keyboard shortcuts for file dialog
-        if (in.trigger_open_dialog)
+        if (in.hotkeys.trigger_open_dialog)
         {
             IGFD::FileDialogConfig cfg;
             cfg.path = ".";
             ImGuiFileDialog::Instance()->OpenDialog(
                 "kestrel_open", "Open file", ".*,.txt,.log,.md", cfg);
-            in.trigger_open_dialog = false;
+            in.hotkeys.trigger_open_dialog = false;
         }
     }
 
@@ -123,50 +123,50 @@ namespace kestrel
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - gear_w - ImGui::GetStyle().ItemSpacing.x);
 
             // Handle Ctrl+F focus
-            if (in.focus_search)
+            if (in.hotkeys.focus_search)
             {
                 ImGui::SetKeyboardFocusHere();
-                in.focus_search = false;
+                in.hotkeys.focus_search = false;
             }
 
             // ImGui InputText reverts buffer on Escape. Snapshot before the call
             // and restore if Escape caused the deactivation, so Esc only unfocuses.
             const bool esc_pressed = ImGui::IsKeyPressed(ImGuiKey_Escape);
-            char query_backup[IM_ARRAYSIZE(in.query)];
+            char query_backup[IM_ARRAYSIZE(in.search.query)];
             if (esc_pressed)
-                std::memcpy(query_backup, in.query, sizeof(in.query));
+                std::memcpy(query_backup, in.search.query, sizeof(in.search.query));
 
-            ImGui::InputTextWithHint("##query", "search...", in.query, IM_ARRAYSIZE(in.query));
+            ImGui::InputTextWithHint("##query", "search...", in.search.query, IM_ARRAYSIZE(in.search.query));
 
             if (esc_pressed && ImGui::IsItemDeactivated())
-                std::memcpy(in.query, query_backup, sizeof(in.query));
+                std::memcpy(in.search.query, query_backup, sizeof(in.search.query));
             ImGui::SameLine();
             if (ImGui::Button(" * "))
                 in.show_settings = !in.show_settings;
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Settings");
 
-            ImGui::Checkbox("Aa", &in.case_sensitive);
+            ImGui::Checkbox("Aa", &in.search.case_sensitive);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Case sensitive");
 
             ImGui::SameLine();
-            ImGui::Checkbox(".*", &in.dotall);
+            ImGui::Checkbox(".*", &in.search.dotall);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Dot matches newlines\n(. matches \\n and all characters)");
 
             ImGui::SameLine();
-            ImGui::Checkbox("^$", &in.multiline);
+            ImGui::Checkbox("^$", &in.search.multiline);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Multiline anchors\n(^ and $ match line boundaries)");
 
             ImGui::SameLine();
-            ImGui::Text("%d before", in.matches_before);
+            ImGui::Text("%d before", in.layout.matches_before);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Matches before cursor");
 
             ImGui::SameLine();
-            ImGui::Text("%d after", in.matches_after);
+            ImGui::Text("%d after", in.layout.matches_after);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Matches after cursor");
 
@@ -178,17 +178,17 @@ namespace kestrel
             ImGui::TextDisabled("%.2f ms", search.last_scan_ms());
 
             ImGui::SameLine();
-            ImGui::ColorEdit4("match", &in.color_match.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+            ImGui::ColorEdit4("match", &in.view.color_match.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
             ImGui::SameLine();
             ImGui::TextUnformatted("match");
 
             ImGui::SameLine();
-            ImGui::ColorEdit4("cursor", &in.color_scope.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+            ImGui::ColorEdit4("cursor", &in.view.color_scope.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
             ImGui::SameLine();
             ImGui::TextUnformatted("cursor");
 
             ImGui::SameLine();
-            ImGui::Checkbox("line #", &in.show_line_nums);
+            ImGui::Checkbox("line #", &in.view.show_line_nums);
 
             if (!search.compile_error().empty())
             {
@@ -196,7 +196,7 @@ namespace kestrel
             }
             // Measure after all widgets are placed so the results window below
             // sits flush, even when the error row appears or disappears.
-            in.search_bar_h = ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
+            in.layout.search_bar_h = ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
         }
         ImGui::End();
     }
@@ -204,9 +204,9 @@ namespace kestrel
     static void draw_results(UiInputs &in, const SearchController &search)
     {
         ImGuiViewport *vp = ImGui::GetMainViewport();
-        float window_pos_y = vp->WorkPos.y + in.search_bar_h;
+        float window_pos_y = vp->WorkPos.y + in.layout.search_bar_h;
         ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, window_pos_y));
-        ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, vp->WorkSize.y - in.search_bar_h));
+        ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, vp->WorkSize.y - in.layout.search_bar_h));
 
         // NoDecoration would strip the scrollbar too — spell out the flags we want.
         ImGuiWindowFlags flags =
@@ -222,7 +222,7 @@ namespace kestrel
             // Snap scroll to whole lines — prevents half-clipped rows when the
             // trackpad lands on a sub-line offset. Skip near max scroll: flooring
             // there would drop the scroll below max and clip the last line.
-            if (in.snap_scroll)
+            if (in.view.snap_scroll)
             {
                 float line_h = ImGui::GetTextLineHeightWithSpacing();
                 float scroll_y = ImGui::GetScrollY();
@@ -235,10 +235,10 @@ namespace kestrel
             const bool has_source = search.has_source();
             auto source_bytes = has_source ? search.source_bytes() : std::span<const char>{};
 
-            if (in.loading)
+            if (in.file.loading)
             {
                 // Show loading indicator
-                ImGui::Text("Loading file: %s", in.loading_path.c_str());
+                ImGui::Text("Loading file: %s", in.file.loading_path.c_str());
 
                 // Animated spinner
                 static float spinner_angle = 0.0f;
@@ -263,16 +263,16 @@ namespace kestrel
 
                 ImGui::Dummy(ImVec2(40, 20)); // Reserve space for spinner
 
-                if (!in.loading_error.empty())
+                if (!in.file.loading_error.empty())
                 {
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Error: %s", in.loading_error.c_str());
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Error: %s", in.file.loading_error.c_str());
                 }
             }
             else if (!has_source || source_bytes.empty())
             {
-                if (!in.loading_error.empty())
+                if (!in.file.loading_error.empty())
                 {
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Failed to load file: %s", in.loading_error.c_str());
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Failed to load file: %s", in.file.loading_error.c_str());
                 }
                 else
                 {
@@ -285,7 +285,7 @@ namespace kestrel
                 const int total_lines = static_cast<int>(lines.line_count());
                 const bool filtered = !search.pattern_empty();
                 const auto &matched = search.matched_lines();
-                const bool filter_view = in.display_only_filtered_lines && filtered;
+                const bool filter_view = in.view.display_only_filtered_lines && filtered;
                 const int view_count = filter_view ? static_cast<int>(matched.size()) : total_lines;
                 // Average over many glyphs: per-glyph rounding in CalcTextSize
                 // accumulates otherwise, and match rects drift off by ~1 char per ~40.
@@ -308,12 +308,12 @@ namespace kestrel
                     {
                         const int line_idx = filter_view ? static_cast<int>(matched[i]) : i;
 
-                        if (in.show_line_nums)
+                        if (in.view.show_line_nums)
                         {
-                            if (in.cursor_visible && line_idx == static_cast<int>(in.cursor_line))
+                            if (in.cursor.visible && line_idx == static_cast<int>(in.cursor.line))
                             {
                                 // Highlight cursor line number with cursor color
-                                ImGui::TextColored(in.color_scope, "%7d ", line_idx + 1);
+                                ImGui::TextColored(in.view.color_scope, "%7d ", line_idx + 1);
                             }
                             else
                             {
@@ -332,11 +332,11 @@ namespace kestrel
                         ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
 
                         // Cursor line highlighting
-                        if (in.cursor_visible && line_idx == static_cast<int>(in.cursor_line))
+                        if (in.cursor.visible && line_idx == static_cast<int>(in.cursor.line))
                         {
                             ImVec2 line_min(cursor_pos.x, cursor_pos.y);
                             ImVec2 line_max(cursor_pos.x + ImGui::GetContentRegionAvail().x, cursor_pos.y + line_height);
-                            ImVec4 cursor_color_with_alpha = in.color_scope;
+                            ImVec4 cursor_color_with_alpha = in.view.color_scope;
                             cursor_color_with_alpha.w = 0.3f; // Semi-transparent background
                             ImU32 cursor_color = ImGui::GetColorU32(cursor_color_with_alpha);
                             ImGui::GetWindowDrawList()->AddRectFilled(line_min, line_max, cursor_color);
@@ -354,7 +354,7 @@ namespace kestrel
 
                             ImVec2 p_min(cursor_pos.x + col_start * char_width, cursor_pos.y);
                             ImVec2 p_max(cursor_pos.x + col_end * char_width, cursor_pos.y + line_height);
-                            ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, ImGui::GetColorU32(in.color_match));
+                            ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, ImGui::GetColorU32(in.view.color_match));
                         }
 
                         ImGui::TextUnformatted(p, p + (end - start));
@@ -362,15 +362,15 @@ namespace kestrel
                         // Mouse click to position cursor
                         if (ImGui::IsItemClicked())
                         {
-                            in.cursor_line = static_cast<size_t>(line_idx);
+                            in.cursor.line = static_cast<size_t>(line_idx);
                         }
                     }
                 }
 
                 // Auto-scroll to keep cursor visible
-                if (in.cursor_visible && has_source)
+                if (in.cursor.visible && has_source)
                 {
-                    const int cursor_line = static_cast<int>(in.cursor_line);
+                    const int cursor_line = static_cast<int>(in.cursor.line);
 
                     int cursor_view_pos = cursor_line;
                     if (filter_view)
@@ -408,17 +408,17 @@ namespace kestrel
         if (ImGui::Begin("Settings", &in.show_settings, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::SeparatorText("Display");
-            ImGui::Checkbox("Snap scroll to lines", &in.snap_scroll);
-            ImGui::Checkbox("Show only filtered results", &in.display_only_filtered_lines);
+            ImGui::Checkbox("Snap scroll to lines", &in.view.snap_scroll);
+            ImGui::Checkbox("Show only filtered results", &in.view.display_only_filtered_lines);
 
             ImGui::SeparatorText("Regex Flags");
-            ImGui::Checkbox("Case sensitive", &in.case_sensitive);
+            ImGui::Checkbox("Case sensitive", &in.search.case_sensitive);
 
-            ImGui::Checkbox("Dot matches newlines", &in.dotall);
+            ImGui::Checkbox("Dot matches newlines", &in.search.dotall);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Make . (dot) match newline characters\nPattern 'foo.*bar' can match across lines");
 
-            ImGui::Checkbox("Multiline anchors", &in.multiline);
+            ImGui::Checkbox("Multiline anchors", &in.search.multiline);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Make ^ and $ match line boundaries\n^ = start of line, $ = end of line");
 
@@ -516,7 +516,7 @@ namespace kestrel
         {
             if (dlg->IsOk())
             {
-                in.pending_open = dlg->GetFilePathName();
+                in.file.pending_open = dlg->GetFilePathName();
             }
             dlg->Close();
         }
@@ -524,15 +524,15 @@ namespace kestrel
 
     static void draw_goto_line_dialog(UiInputs &in, const SearchController &search)
     {
-        if (!in.show_goto_line)
+        if (!in.hotkeys.show_goto_line)
             return;
 
-        if (ImGui::Begin("Go to Line", &in.show_goto_line, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse))
+        if (ImGui::Begin("Go to Line", &in.hotkeys.show_goto_line, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse))
         {
             ImGui::Text("Enter line number:");
             ImGui::SetNextItemWidth(200.0f);
 
-            bool enter_pressed = ImGui::InputText("##line", in.goto_line_input, sizeof(in.goto_line_input), ImGuiInputTextFlags_EnterReturnsTrue);
+            bool enter_pressed = ImGui::InputText("##line", in.hotkeys.goto_line_input, sizeof(in.hotkeys.goto_line_input), ImGuiInputTextFlags_EnterReturnsTrue);
 
             if (ImGui::IsWindowAppearing())
             {
@@ -549,7 +549,7 @@ namespace kestrel
             {
                 // Parse line number and jump to it
                 char *endptr;
-                long line_num = strtol(in.goto_line_input, &endptr, 10);
+                long line_num = strtol(in.hotkeys.goto_line_input, &endptr, 10);
 
                 if (*endptr == '\0' && line_num > 0 && search.has_source())
                 {
@@ -559,20 +559,20 @@ namespace kestrel
                     if (max_line > 0)
                     {
                         target_line = std::min(target_line, max_line - 1);
-                        in.cursor_line = target_line;
-                        in.cursor_offset = search.line_index().line_start(target_line);
+                        in.cursor.line = target_line;
+                        in.cursor.offset = search.line_index().line_start(target_line);
                     }
                 }
 
                 // Close dialog and clear input
-                in.show_goto_line = false;
-                in.goto_line_input[0] = '\0';
+                in.hotkeys.show_goto_line = false;
+                in.hotkeys.goto_line_input[0] = '\0';
             }
 
             if (cancel_button)
             {
-                in.show_goto_line = false;
-                in.goto_line_input[0] = '\0';
+                in.hotkeys.show_goto_line = false;
+                in.hotkeys.goto_line_input[0] = '\0';
             }
         }
         ImGui::End();
