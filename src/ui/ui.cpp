@@ -104,6 +104,86 @@ namespace kestrel
         }
     }
 
+    static void draw_query_input(UiInputs &in)
+    {
+        // Handle Ctrl+F focus
+        if (in.hotkeys.focus_search)
+        {
+            ImGui::SetKeyboardFocusHere();
+            in.hotkeys.focus_search = false;
+        }
+
+        // ImGui InputText reverts buffer on Escape. Snapshot before the call
+        // and restore if Escape caused the deactivation, so Esc only unfocuses.
+        const bool esc_pressed = ImGui::IsKeyPressed(ImGuiKey_Escape);
+        char query_backup[IM_ARRAYSIZE(in.search.query)];
+        if (esc_pressed)
+            std::memcpy(query_backup, in.search.query, sizeof(in.search.query));
+
+        ImGui::InputTextWithHint("##query", "search...", in.search.query, IM_ARRAYSIZE(in.search.query));
+
+        if (esc_pressed && ImGui::IsItemDeactivated())
+            std::memcpy(in.search.query, query_backup, sizeof(in.search.query));
+    }
+
+    static void draw_toolbar(UiInputs &in, const SearchController &search)
+    {
+        ImGui::SameLine();
+        if (ImGui::Button(" * "))
+            in.show_settings = !in.show_settings;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Settings");
+
+        ImGui::Checkbox("Aa", &in.search.case_sensitive);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Case sensitive");
+
+        ImGui::SameLine();
+        ImGui::Checkbox(".*", &in.search.dotall);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Dot matches newlines\n(. matches \\n and all characters)");
+
+        ImGui::SameLine();
+        ImGui::Checkbox("^$", &in.search.multiline);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Multiline anchors\n(^ and $ match line boundaries)");
+
+        ImGui::SameLine();
+        ImGui::Text("%d before", in.layout.matches_before);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Matches before cursor");
+
+        ImGui::SameLine();
+        ImGui::Text("%d after", in.layout.matches_after);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Matches after cursor");
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+        ImGui::Text("%zu matches", search.matches().size());
+        ImGui::SameLine();
+        ImGui::TextDisabled("%.2f ms", search.last_scan_ms());
+
+        ImGui::SameLine();
+        ImGui::ColorEdit4("match", &in.view.color_match.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+        ImGui::SameLine();
+        ImGui::TextUnformatted("match");
+
+        ImGui::SameLine();
+        ImGui::ColorEdit4("cursor", &in.view.color_scope.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+        ImGui::SameLine();
+        ImGui::TextUnformatted("cursor");
+
+        ImGui::SameLine();
+        ImGui::Checkbox("line #", &in.view.show_line_nums);
+
+        if (!search.compile_error().empty())
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", search.compile_error().c_str());
+        }
+    }
+
     static void draw_search_bar(UiInputs &in, const SearchController &search)
     {
         ImGuiViewport *vp = ImGui::GetMainViewport();
@@ -122,83 +202,140 @@ namespace kestrel
             const float gear_w = ImGui::CalcTextSize(" * ").x + ImGui::GetStyle().FramePadding.x * 2.0f;
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - gear_w - ImGui::GetStyle().ItemSpacing.x);
 
-            // Handle Ctrl+F focus
-            if (in.hotkeys.focus_search)
-            {
-                ImGui::SetKeyboardFocusHere();
-                in.hotkeys.focus_search = false;
-            }
+            draw_query_input(in);
+            draw_toolbar(in, search);
 
-            // ImGui InputText reverts buffer on Escape. Snapshot before the call
-            // and restore if Escape caused the deactivation, so Esc only unfocuses.
-            const bool esc_pressed = ImGui::IsKeyPressed(ImGuiKey_Escape);
-            char query_backup[IM_ARRAYSIZE(in.search.query)];
-            if (esc_pressed)
-                std::memcpy(query_backup, in.search.query, sizeof(in.search.query));
-
-            ImGui::InputTextWithHint("##query", "search...", in.search.query, IM_ARRAYSIZE(in.search.query));
-
-            if (esc_pressed && ImGui::IsItemDeactivated())
-                std::memcpy(in.search.query, query_backup, sizeof(in.search.query));
-            ImGui::SameLine();
-            if (ImGui::Button(" * "))
-                in.show_settings = !in.show_settings;
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Settings");
-
-            ImGui::Checkbox("Aa", &in.search.case_sensitive);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Case sensitive");
-
-            ImGui::SameLine();
-            ImGui::Checkbox(".*", &in.search.dotall);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Dot matches newlines\n(. matches \\n and all characters)");
-
-            ImGui::SameLine();
-            ImGui::Checkbox("^$", &in.search.multiline);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Multiline anchors\n(^ and $ match line boundaries)");
-
-            ImGui::SameLine();
-            ImGui::Text("%d before", in.layout.matches_before);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Matches before cursor");
-
-            ImGui::SameLine();
-            ImGui::Text("%d after", in.layout.matches_after);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Matches after cursor");
-
-            ImGui::SameLine();
-            ImGui::TextDisabled("|");
-            ImGui::SameLine();
-            ImGui::Text("%zu matches", search.matches().size());
-            ImGui::SameLine();
-            ImGui::TextDisabled("%.2f ms", search.last_scan_ms());
-
-            ImGui::SameLine();
-            ImGui::ColorEdit4("match", &in.view.color_match.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
-            ImGui::SameLine();
-            ImGui::TextUnformatted("match");
-
-            ImGui::SameLine();
-            ImGui::ColorEdit4("cursor", &in.view.color_scope.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
-            ImGui::SameLine();
-            ImGui::TextUnformatted("cursor");
-
-            ImGui::SameLine();
-            ImGui::Checkbox("line #", &in.view.show_line_nums);
-
-            if (!search.compile_error().empty())
-            {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", search.compile_error().c_str());
-            }
             // Measure after all widgets are placed so the results window below
             // sits flush, even when the error row appears or disappears.
             in.layout.search_bar_h = ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
         }
         ImGui::End();
+    }
+
+    static void draw_loading_spinner(const std::string &loading_path, const std::string &loading_error)
+    {
+        ImGui::Text("Loading file: %s", loading_path.c_str());
+
+        static float spinner_angle = 0.0f;
+        spinner_angle += 0.1f;
+        if (spinner_angle >= 2.0f * 3.14159f)
+            spinner_angle = 0.0f;
+
+        ImDrawList *draw_list = ImGui::GetWindowDrawList();
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImVec2 center = ImVec2(pos.x + 20, pos.y + 10);
+        float radius = 8.0f;
+        ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
+
+        for (int i = 0; i < 12; i++)
+        {
+            float angle = spinner_angle + (i * 2.0f * 3.14159f / 12.0f);
+            float alpha = (12 - i) / 12.0f;
+            ImU32 fade_color = (color & 0x00FFFFFF) | (IM_COL32_A_MASK & ImU32(alpha * 255) << IM_COL32_A_SHIFT);
+            ImVec2 dot_pos = ImVec2(center.x + radius * cosf(angle), center.y + radius * sinf(angle));
+            draw_list->AddCircleFilled(dot_pos, 2.0f, fade_color);
+        }
+
+        ImGui::Dummy(ImVec2(40, 20)); // Reserve space for spinner
+
+        if (!loading_error.empty())
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Error: %s", loading_error.c_str());
+        }
+    }
+
+    static void draw_line_row(UiInputs &in, const SearchController &search,
+                              const LineIndex &lines, int total_lines,
+                              std::span<const char> source_bytes, int line_idx,
+                              float line_height, float char_width)
+    {
+        if (in.view.show_line_nums)
+        {
+            if (in.cursor.visible && line_idx == static_cast<int>(in.cursor.line))
+            {
+                // Highlight cursor line number with cursor color
+                ImGui::TextColored(in.view.color_scope, "%7d ", line_idx + 1);
+            }
+            else
+            {
+                ImGui::TextDisabled("%7d ", line_idx + 1);
+            }
+            ImGui::SameLine();
+        }
+        std::size_t start = lines.line_start(line_idx);
+        std::size_t end = (line_idx + 1 < total_lines)
+                              ? lines.line_start(line_idx + 1)
+                              : source_bytes.size();
+        while (end > start && (source_bytes[end - 1] == '\n' || source_bytes[end - 1] == '\r'))
+            --end;
+        const char *p = source_bytes.data() + start;
+
+        ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+
+        // Cursor line highlighting
+        if (in.cursor.visible && line_idx == static_cast<int>(in.cursor.line))
+        {
+            ImVec2 line_min(cursor_pos.x, cursor_pos.y);
+            ImVec2 line_max(cursor_pos.x + ImGui::GetContentRegionAvail().x, cursor_pos.y + line_height);
+            ImVec4 cursor_color_with_alpha = in.view.color_scope;
+            cursor_color_with_alpha.w = 0.3f; // Semi-transparent background
+            ImU32 cursor_color = ImGui::GetColorU32(cursor_color_with_alpha);
+            ImGui::GetWindowDrawList()->AddRectFilled(line_min, line_max, cursor_color);
+        }
+
+        std::span matches_in_range = search.matches_in_range(start, end);
+
+        // TODO: col_start/col_end are byte offsets. Correct for ASCII;
+        // breaks for multibyte UTF-8 (one codepoint spans multiple bytes).
+        // Revisit when we care about non-ASCII logs.
+        for (auto match : matches_in_range)
+        {
+            std::size_t col_start = match.start - start;
+            std::size_t col_end = std::min(match.end, end) - start;
+
+            ImVec2 p_min(cursor_pos.x + col_start * char_width, cursor_pos.y);
+            ImVec2 p_max(cursor_pos.x + col_end * char_width, cursor_pos.y + line_height);
+            ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, ImGui::GetColorU32(in.view.color_match));
+        }
+
+        ImGui::TextUnformatted(p, p + (end - start));
+
+        // Mouse click to position cursor
+        if (ImGui::IsItemClicked())
+        {
+            in.cursor.line = static_cast<size_t>(line_idx);
+        }
+    }
+
+    static void autoscroll_to_cursor(const UiInputs &in, const std::vector<size_t> &matched,
+                                     bool filter_view, int view_count,
+                                     const ImGuiListClipper &clipper)
+    {
+        const int cursor_line = static_cast<int>(in.cursor.line);
+
+        int cursor_view_pos = cursor_line;
+        if (filter_view)
+        {
+            cursor_view_pos = -1;
+            for (int i = 0; i < view_count; ++i)
+            {
+                if (static_cast<int>(matched[i]) == cursor_line)
+                {
+                    cursor_view_pos = i;
+                    break;
+                }
+            }
+        }
+
+        if (cursor_view_pos >= 0 &&
+            (cursor_view_pos < clipper.DisplayStart ||
+             cursor_view_pos >= clipper.DisplayEnd))
+        {
+            float scroll_line_height = ImGui::GetTextLineHeightWithSpacing();
+            float target_scroll = cursor_view_pos * scroll_line_height - (ImGui::GetWindowHeight() * 0.5f);
+            target_scroll = std::max(0.0f, target_scroll);
+            ImGui::SetScrollY(target_scroll);
+        }
     }
 
     static void draw_results(UiInputs &in, const SearchController &search)
@@ -237,36 +374,7 @@ namespace kestrel
 
             if (in.file.loading)
             {
-                // Show loading indicator
-                ImGui::Text("Loading file: %s", in.file.loading_path.c_str());
-
-                // Animated spinner
-                static float spinner_angle = 0.0f;
-                spinner_angle += 0.1f;
-                if (spinner_angle >= 2.0f * 3.14159f)
-                    spinner_angle = 0.0f;
-
-                ImDrawList *draw_list = ImGui::GetWindowDrawList();
-                ImVec2 pos = ImGui::GetCursorScreenPos();
-                ImVec2 center = ImVec2(pos.x + 20, pos.y + 10);
-                float radius = 8.0f;
-                ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
-
-                for (int i = 0; i < 12; i++)
-                {
-                    float angle = spinner_angle + (i * 2.0f * 3.14159f / 12.0f);
-                    float alpha = (12 - i) / 12.0f;
-                    ImU32 fade_color = (color & 0x00FFFFFF) | (IM_COL32_A_MASK & ImU32(alpha * 255) << IM_COL32_A_SHIFT);
-                    ImVec2 dot_pos = ImVec2(center.x + radius * cosf(angle), center.y + radius * sinf(angle));
-                    draw_list->AddCircleFilled(dot_pos, 2.0f, fade_color);
-                }
-
-                ImGui::Dummy(ImVec2(40, 20)); // Reserve space for spinner
-
-                if (!in.file.loading_error.empty())
-                {
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Error: %s", in.file.loading_error.c_str());
-                }
+                draw_loading_spinner(in.file.loading_path, in.file.loading_error);
             }
             else if (!has_source || source_bytes.empty())
             {
@@ -307,98 +415,50 @@ namespace kestrel
                     for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
                     {
                         const int line_idx = filter_view ? static_cast<int>(matched[i]) : i;
-
-                        if (in.view.show_line_nums)
-                        {
-                            if (in.cursor.visible && line_idx == static_cast<int>(in.cursor.line))
-                            {
-                                // Highlight cursor line number with cursor color
-                                ImGui::TextColored(in.view.color_scope, "%7d ", line_idx + 1);
-                            }
-                            else
-                            {
-                                ImGui::TextDisabled("%7d ", line_idx + 1);
-                            }
-                            ImGui::SameLine();
-                        }
-                        std::size_t start = lines.line_start(line_idx);
-                        std::size_t end = (line_idx + 1 < total_lines)
-                                              ? lines.line_start(line_idx + 1)
-                                              : source_bytes.size();
-                        while (end > start && (source_bytes[end - 1] == '\n' || source_bytes[end - 1] == '\r'))
-                            --end;
-                        const char *p = source_bytes.data() + start;
-
-                        ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
-
-                        // Cursor line highlighting
-                        if (in.cursor.visible && line_idx == static_cast<int>(in.cursor.line))
-                        {
-                            ImVec2 line_min(cursor_pos.x, cursor_pos.y);
-                            ImVec2 line_max(cursor_pos.x + ImGui::GetContentRegionAvail().x, cursor_pos.y + line_height);
-                            ImVec4 cursor_color_with_alpha = in.view.color_scope;
-                            cursor_color_with_alpha.w = 0.3f; // Semi-transparent background
-                            ImU32 cursor_color = ImGui::GetColorU32(cursor_color_with_alpha);
-                            ImGui::GetWindowDrawList()->AddRectFilled(line_min, line_max, cursor_color);
-                        }
-
-                        std::span matches_in_range = search.matches_in_range(start, end);
-
-                        // TODO: col_start/col_end are byte offsets. Correct for ASCII;
-                        // breaks for multibyte UTF-8 (one codepoint spans multiple bytes).
-                        // Revisit when we care about non-ASCII logs.
-                        for (auto match : matches_in_range)
-                        {
-                            std::size_t col_start = match.start - start;
-                            std::size_t col_end = std::min(match.end, end) - start;
-
-                            ImVec2 p_min(cursor_pos.x + col_start * char_width, cursor_pos.y);
-                            ImVec2 p_max(cursor_pos.x + col_end * char_width, cursor_pos.y + line_height);
-                            ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, ImGui::GetColorU32(in.view.color_match));
-                        }
-
-                        ImGui::TextUnformatted(p, p + (end - start));
-
-                        // Mouse click to position cursor
-                        if (ImGui::IsItemClicked())
-                        {
-                            in.cursor.line = static_cast<size_t>(line_idx);
-                        }
+                        draw_line_row(in, search, lines, total_lines, source_bytes,
+                                      line_idx, line_height, char_width);
                     }
                 }
 
-                // Auto-scroll to keep cursor visible
                 if (in.cursor.visible && has_source)
                 {
-                    const int cursor_line = static_cast<int>(in.cursor.line);
-
-                    int cursor_view_pos = cursor_line;
-                    if (filter_view)
-                    {
-                        cursor_view_pos = -1;
-                        for (int i = 0; i < view_count; ++i)
-                        {
-                            if (static_cast<int>(matched[i]) == cursor_line)
-                            {
-                                cursor_view_pos = i;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (cursor_view_pos >= 0 &&
-                        (cursor_view_pos < clipper.DisplayStart ||
-                         cursor_view_pos >= clipper.DisplayEnd))
-                    {
-                        float scroll_line_height = ImGui::GetTextLineHeightWithSpacing();
-                        float target_scroll = cursor_view_pos * scroll_line_height - (ImGui::GetWindowHeight() * 0.5f);
-                        target_scroll = std::max(0.0f, target_scroll);
-                        ImGui::SetScrollY(target_scroll);
-                    }
+                    autoscroll_to_cursor(in, matched, filter_view, view_count, clipper);
                 }
             }
         }
         ImGui::End();
+    }
+
+    static void draw_shortcut_row(const char *key, const char *action)
+    {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "%s", key);
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(action);
+    }
+
+    static void draw_shortcuts_table()
+    {
+        if (!ImGui::BeginTable("shortcuts", 2, ImGuiTableFlags_SizingFixedFit))
+            return;
+        ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
+
+        draw_shortcut_row("Ctrl+F", "Focus search box");
+        draw_shortcut_row("Ctrl+O", "Open file dialog");
+        draw_shortcut_row("Ctrl+Q", "Quit application");
+        draw_shortcut_row("Escape", "Unfocus input");
+        draw_shortcut_row("Ctrl+L", "Clear search");
+        draw_shortcut_row("n", "Next match");
+        draw_shortcut_row("Shift+N", "Previous match");
+        draw_shortcut_row("↑↓ PgUp/Dn", "Navigate lines");
+        draw_shortcut_row("Home/End", "First/last line");
+        draw_shortcut_row("Ctrl+G", "Go to line");
+        draw_shortcut_row("Ctrl+C", "Copy search pattern");
+        draw_shortcut_row("Ctrl+V", "Paste to search");
+
+        ImGui::EndTable();
     }
 
     static void draw_settings_popup(UiInputs &in)
@@ -423,87 +483,7 @@ namespace kestrel
                 ImGui::SetTooltip("Make ^ and $ match line boundaries\n^ = start of line, $ = end of line");
 
             ImGui::SeparatorText("Keyboard Shortcuts");
-
-            // Create two-column layout for shortcuts
-            if (ImGui::BeginTable("shortcuts", 2, ImGuiTableFlags_SizingFixedFit))
-            {
-                ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+F");
-                ImGui::TableNextColumn();
-                ImGui::Text("Focus search box");
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+O");
-                ImGui::TableNextColumn();
-                ImGui::Text("Open file dialog");
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+Q");
-                ImGui::TableNextColumn();
-                ImGui::Text("Quit application");
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Escape");
-                ImGui::TableNextColumn();
-                ImGui::Text("Unfocus input");
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+L");
-                ImGui::TableNextColumn();
-                ImGui::Text("Clear search");
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "n");
-                ImGui::TableNextColumn();
-                ImGui::Text("Next match");
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Shift+N");
-                ImGui::TableNextColumn();
-                ImGui::Text("Previous match");
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "↑↓ PgUp/Dn");
-                ImGui::TableNextColumn();
-                ImGui::Text("Navigate lines");
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Home/End");
-                ImGui::TableNextColumn();
-                ImGui::Text("First/last line");
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+G");
-                ImGui::TableNextColumn();
-                ImGui::Text("Go to line");
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+C");
-                ImGui::TableNextColumn();
-                ImGui::Text("Copy search pattern");
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+V");
-                ImGui::TableNextColumn();
-                ImGui::Text("Paste to search");
-
-                ImGui::EndTable();
-            }
+            draw_shortcuts_table();
         }
         ImGui::End();
     }
