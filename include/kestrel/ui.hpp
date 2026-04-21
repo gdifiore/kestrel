@@ -20,6 +20,8 @@ namespace kestrel
         // Keyboard shortcut triggers
         bool focus_search = false;
         bool trigger_open_dialog = false;
+        bool show_goto_line = false;
+        char goto_line_input[32] = {};
 
         // File loading state
         bool loading = false;

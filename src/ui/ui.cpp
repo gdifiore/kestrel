@@ -6,6 +6,8 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <span>
 
@@ -478,6 +480,24 @@ namespace kestrel
                 ImGui::TableNextColumn();
                 ImGui::Text("First/last line");
 
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+G");
+                ImGui::TableNextColumn();
+                ImGui::Text("Go to line");
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+C");
+                ImGui::TableNextColumn();
+                ImGui::Text("Copy search pattern");
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+V");
+                ImGui::TableNextColumn();
+                ImGui::Text("Paste to search");
+
                 ImGui::EndTable();
             }
         }
@@ -498,6 +518,62 @@ namespace kestrel
         }
     }
 
+    static void draw_goto_line_dialog(UiInputs &in, const SearchController &search)
+    {
+        if (!in.show_goto_line)
+            return;
+
+        if (ImGui::Begin("Go to Line", &in.show_goto_line, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse))
+        {
+            ImGui::Text("Enter line number:");
+            ImGui::SetNextItemWidth(200.0f);
+
+            bool enter_pressed = ImGui::InputText("##line", in.goto_line_input, sizeof(in.goto_line_input), ImGuiInputTextFlags_EnterReturnsTrue);
+
+            if (ImGui::IsWindowAppearing())
+            {
+                ImGui::SetKeyboardFocusHere(-1); // Focus the input field
+            }
+
+            ImGui::Spacing();
+
+            bool go_button = ImGui::Button("Go");
+            ImGui::SameLine();
+            bool cancel_button = ImGui::Button("Cancel");
+
+            if (enter_pressed || go_button)
+            {
+                // Parse line number and jump to it
+                char *endptr;
+                long line_num = strtol(in.goto_line_input, &endptr, 10);
+
+                if (*endptr == '\0' && line_num > 0 && search.has_source())
+                {
+                    // Convert to 0-based and clamp to valid range
+                    size_t target_line = static_cast<size_t>(line_num - 1);
+                    size_t max_line = search.line_index().line_count();
+                    if (max_line > 0)
+                    {
+                        target_line = std::min(target_line, max_line - 1);
+                        in.cursor_line = target_line;
+                        in.cursor_offset = search.line_index().line_start(target_line);
+                    }
+                }
+
+                // Close dialog and clear input
+                in.show_goto_line = false;
+                in.goto_line_input[0] = '\0';
+            }
+
+            if (cancel_button)
+            {
+                in.show_goto_line = false;
+                in.goto_line_input[0] = '\0';
+            }
+        }
+        ImGui::End();
+    }
+
     void draw_ui(UiInputs &in, const SearchController &search)
     {
         draw_main_menu(in);
@@ -505,6 +581,7 @@ namespace kestrel
         draw_results(in, search);
         draw_settings_popup(in);
         draw_open_dialog(in);
+        draw_goto_line_dialog(in, search);
     }
 
 } // namespace kestrel

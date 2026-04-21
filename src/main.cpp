@@ -11,6 +11,6 @@ int main(int argc, char **argv)
     if (const char *lvl = std::getenv("KESTREL_LOG"))
         spdlog::set_level(spdlog::level::from_str(lvl));
     else
-        spdlog::set_level(spdlog::level::info);
+        spdlog::set_level(spdlog::level::warn);
     return kestrel::run_app(argc, argv);
 }

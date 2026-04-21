@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstring>
 #include <iostream>
 
 namespace kestrel
@@ -62,6 +63,29 @@ namespace kestrel
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O))
         {
             ui.trigger_open_dialog = true;
+        }
+
+        // Ctrl+G - Go to line
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_G))
+        {
+            ui.show_goto_line = true;
+        }
+
+        // Ctrl+C - Copy current search pattern (when no input widget is focused)
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C) && !ImGui::IsAnyItemActive())
+        {
+            ImGui::SetClipboardText(ui.query);
+        }
+
+        // Ctrl+V - Paste to search pattern (when no input widget is focused)
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V) && !ImGui::IsAnyItemActive())
+        {
+            const char* clipboard = ImGui::GetClipboardText();
+            if (clipboard && clipboard[0] != '\0')
+            {
+                strncpy(ui.query, clipboard, sizeof(ui.query) - 1);
+                ui.query[sizeof(ui.query) - 1] = '\0';
+            }
         }
 
         // Ctrl+Q - Quit application
@@ -150,7 +174,7 @@ namespace kestrel
             return 0;
         }
 
-        spdlog::info("kestrel start");
+        spdlog::debug("kestrel start");
 
         SearchController search;
         UiInputs ui;
@@ -227,7 +251,7 @@ namespace kestrel
         }
 
         save_config(ui);
-        spdlog::info("kestrel exit");
+        spdlog::debug("kestrel exit");
         return 0;
     }
 

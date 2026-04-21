@@ -97,7 +97,7 @@ namespace kestrel
             source = std::make_shared<Source>(Source::from_path(job.file_path));
             lines.emplace(source->bytes());  // Direct construction, no extra moves
 
-            spdlog::info("loaded {} ({} bytes)", job.file_path, source->bytes().size());
+            spdlog::debug("loaded {} ({} bytes)", job.file_path, source->bytes().size());
         }
         catch (const SourceError &e)
         {
