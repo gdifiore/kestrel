@@ -129,7 +129,17 @@ namespace kestrel
                 in.focus_search = false;
             }
 
+            // ImGui InputText reverts buffer on Escape. Snapshot before the call
+            // and restore if Escape caused the deactivation, so Esc only unfocuses.
+            const bool esc_pressed = ImGui::IsKeyPressed(ImGuiKey_Escape);
+            char query_backup[IM_ARRAYSIZE(in.query)];
+            if (esc_pressed)
+                std::memcpy(query_backup, in.query, sizeof(in.query));
+
             ImGui::InputTextWithHint("##query", "search...", in.query, IM_ARRAYSIZE(in.query));
+
+            if (esc_pressed && ImGui::IsItemDeactivated())
+                std::memcpy(in.query, query_backup, sizeof(in.query));
             ImGui::SameLine();
             if (ImGui::Button(" * "))
                 in.show_settings = !in.show_settings;
@@ -441,6 +451,12 @@ namespace kestrel
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
                 ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Escape");
+                ImGui::TableNextColumn();
+                ImGui::Text("Unfocus input");
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Ctrl+L");
                 ImGui::TableNextColumn();
                 ImGui::Text("Clear search");
 

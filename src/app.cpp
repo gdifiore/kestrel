@@ -94,19 +94,16 @@ namespace kestrel
             ui.quit_requested = true;
         }
 
-        // Escape - Clear search input or unfocus search box
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+        // Escape - Unfocus any active input widget
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape) && ImGui::IsAnyItemActive())
         {
-            if (ImGui::IsAnyItemActive())
-            {
-                // If search input is focused, unfocus it
-                ImGui::SetKeyboardFocusHere(-1); // Unfocus current item
-            }
-            else
-            {
-                // Otherwise clear search
-                ui.query[0] = '\0';
-            }
+            ImGui::SetKeyboardFocusHere(-1);
+        }
+
+        // Ctrl+L - Clear search query
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_L))
+        {
+            ui.query[0] = '\0';
         }
 
         // n - Go to next match (only when no input widget is focused)
@@ -115,22 +112,22 @@ namespace kestrel
             if (search.has_source() && !search.matches().empty())
             {
                 const auto &matches = search.matches();
-                auto cursor_offset = search.line_index().line_start(ui.cursor_line);
+                const auto &line_index = search.line_index();
 
-                // Find next match after cursor
-                auto it = std::upper_bound(matches.begin(), matches.end(), cursor_offset,
-                                           [](size_t offset, const Match &m)
-                                           { return offset < m.start; });
+                // First match on a line strictly after the cursor line.
+                // Using line (not byte offset) avoids getting stuck on a match
+                // whose start is > line_start(cursor_line) on the same line.
+                auto it = std::upper_bound(matches.begin(), matches.end(), ui.cursor_line,
+                                           [&](size_t line, const Match &m)
+                                           { return line < line_index.line_of(m.start); });
 
                 if (it != matches.end())
                 {
-                    // Found next match
-                    ui.cursor_line = search.line_index().line_of(it->start);
+                    ui.cursor_line = line_index.line_of(it->start);
                 }
-                else if (!matches.empty())
+                else
                 {
-                    // Wrap to first match
-                    ui.cursor_line = search.line_index().line_of(matches[0].start);
+                    ui.cursor_line = line_index.line_of(matches[0].start);
                 }
             }
         }
