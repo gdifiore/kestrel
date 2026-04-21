@@ -275,7 +275,8 @@ namespace kestrel
                 const int total_lines = static_cast<int>(lines.line_count());
                 const bool filtered = !search.pattern_empty();
                 const auto &matched = search.matched_lines();
-                const int view_count = filtered ? static_cast<int>(matched.size()) : total_lines;
+                const bool filter_view = in.display_only_filtered_lines && filtered;
+                const int view_count = filter_view ? static_cast<int>(matched.size()) : total_lines;
                 // Average over many glyphs: per-glyph rounding in CalcTextSize
                 // accumulates otherwise, and match rects drift off by ~1 char per ~40.
                 float char_width = ImGui::CalcTextSize(
@@ -284,7 +285,7 @@ namespace kestrel
                                    50.0f;
                 float line_height = ImGui::GetTextLineHeight();
 
-                if (filtered && view_count == 0 && search.compile_error().empty())
+                if (filtered && matched.empty() && search.compile_error().empty())
                 {
                     ImGui::TextDisabled("No matches.");
                 }
@@ -295,9 +296,7 @@ namespace kestrel
                 {
                     for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
                     {
-                        const int line_idx = in.display_only_filtered_lines
-                                                 ? (filtered ? static_cast<int>(matched[i]) : i)
-                                                 : i;
+                        const int line_idx = filter_view ? static_cast<int>(matched[i]) : i;
 
                         if (in.show_line_nums)
                         {
@@ -363,11 +362,10 @@ namespace kestrel
                 {
                     const int cursor_line = static_cast<int>(in.cursor_line);
 
-                    // Find cursor position in current view
-                    int cursor_view_pos = -1;
-                    if (in.display_only_filtered_lines && filtered)
+                    int cursor_view_pos = cursor_line;
+                    if (filter_view)
                     {
-                        // Filter mode: Find cursor line in matched_lines array
+                        cursor_view_pos = -1;
                         for (int i = 0; i < view_count; ++i)
                         {
                             if (static_cast<int>(matched[i]) == cursor_line)
@@ -377,25 +375,15 @@ namespace kestrel
                             }
                         }
                     }
-                    else
-                    {
-                        // Highlight mode or no filter: view position = line number
-                        cursor_view_pos = cursor_line;
-                    }
 
-                    // Scroll to cursor if not visible or not found in filtered view
-                    if (cursor_view_pos == -1 ||
-                        cursor_view_pos < clipper.DisplayStart ||
-                        cursor_view_pos >= clipper.DisplayEnd)
+                    if (cursor_view_pos >= 0 &&
+                        (cursor_view_pos < clipper.DisplayStart ||
+                         cursor_view_pos >= clipper.DisplayEnd))
                     {
-
-                        if (cursor_view_pos >= 0)
-                        {
-                            float scroll_line_height = ImGui::GetTextLineHeightWithSpacing();
-                            float target_scroll = cursor_view_pos * scroll_line_height - (ImGui::GetWindowHeight() * 0.5f);
-                            target_scroll = std::max(0.0f, target_scroll);
-                            ImGui::SetScrollY(target_scroll);
-                        }
+                        float scroll_line_height = ImGui::GetTextLineHeightWithSpacing();
+                        float target_scroll = cursor_view_pos * scroll_line_height - (ImGui::GetWindowHeight() * 0.5f);
+                        target_scroll = std::max(0.0f, target_scroll);
+                        ImGui::SetScrollY(target_scroll);
                     }
                 }
             }
