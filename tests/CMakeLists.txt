@@ -52,11 +52,13 @@ target_include_directories(parse_cli_test PRIVATE
 )
 add_test(NAME parse_cli_test COMMAND parse_cli_test)
 
-add_executable(config_test config_test.cpp ../src/config.cpp)
+add_executable(config_test config_test.cpp ../src/config.cpp ../src/engine/group_matcher.cpp)
 target_include_directories(config_test PRIVATE
     ../include
     ../third_party/doctest
     ../third_party/imgui
+    ../third_party/vectorscan/src
+    ${CMAKE_BINARY_DIR}/third_party/vectorscan
 )
-target_link_libraries(config_test PRIVATE spdlog::spdlog)
+target_link_libraries(config_test PRIVATE spdlog::spdlog pcre2-8-static)
 add_test(NAME config_test COMMAND config_test)

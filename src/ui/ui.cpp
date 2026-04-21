@@ -285,6 +285,22 @@ namespace kestrel
 
         std::span matches_in_range = search.matches_in_range(start, end);
 
+        const GroupMatcher *gm = nullptr;
+        bool has_groups = false;
+
+        thread_local std::vector<GroupMatcher::Span> group_spans;
+        thread_local std::vector<int> group_indices;
+
+        const auto &group_palette = in.view.group_colors;
+        int palette_size = 0;
+
+        if (in.view.highlight_groups)
+        {
+            palette_size = static_cast<int>(group_palette.size());
+            gm = in.groupmatch.group_matcher_ ? &*in.groupmatch.group_matcher_ : nullptr;
+            has_groups = gm && gm->group_count() > 0;
+        }
+
         // TODO: col_start/col_end are byte offsets. Correct for ASCII;
         // breaks for multibyte UTF-8 (one codepoint spans multiple bytes).
         // Revisit when we care about non-ASCII logs.
@@ -296,6 +312,26 @@ namespace kestrel
             ImVec2 p_min(cursor_pos.x + col_start * char_width, cursor_pos.y);
             ImVec2 p_max(cursor_pos.x + col_end * char_width, cursor_pos.y + line_height);
             ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, ImGui::GetColorU32(in.view.color_match));
+
+            if (in.view.highlight_groups && has_groups && match.end <= end)
+            {
+                group_spans.clear();
+                group_indices.clear();
+                gm->match_into(source_bytes, match.start, match.end, group_spans, group_indices);
+                for (std::size_t i = 0; i < group_spans.size(); ++i)
+                {
+                    const auto &g = group_spans[i];
+                    if (g.end <= g.start)
+                        continue; // zero-width: skip
+                    std::size_t g_col_start = g.start - start;
+                    std::size_t g_col_end = g.end - start;
+                    ImVec2 g_min(cursor_pos.x + g_col_start * char_width, cursor_pos.y);
+                    ImVec2 g_max(cursor_pos.x + g_col_end * char_width, cursor_pos.y + line_height);
+                    ImVec4 col = group_palette[(group_indices[i] - 1) % palette_size];
+                    col.w = 0.75f;
+                    ImGui::GetWindowDrawList()->AddRectFilled(g_min, g_max, ImGui::GetColorU32(col));
+                }
+            }
         }
 
         ImGui::TextUnformatted(p, p + (end - start));
@@ -470,6 +506,7 @@ namespace kestrel
             ImGui::SeparatorText("Display");
             ImGui::Checkbox("Snap scroll to lines", &in.view.snap_scroll);
             ImGui::Checkbox("Show only filtered results", &in.view.display_only_filtered_lines);
+            ImGui::Checkbox("Color each regex capture group individually", &in.view.highlight_groups);
 
             ImGui::SeparatorText("Regex Flags");
             ImGui::Checkbox("Case sensitive", &in.search.case_sensitive);

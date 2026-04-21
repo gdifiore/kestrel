@@ -10,3 +10,6 @@
 [submodule "third_party/ImGuiFileDialog"]
 	path = third_party/ImGuiFileDialog
 	url = https://github.com/aiekick/ImGuiFileDialog
+[submodule "third_party/pcre2"]
+	path = third_party/pcre2
+	url = https://github.com/PCRE2Project/pcre2.git

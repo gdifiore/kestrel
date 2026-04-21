@@ -67,6 +67,21 @@ FetchContent_Declare(spdlog
 )
 FetchContent_MakeAvailable(spdlog)
 
+# ---- PCRE2 (secondary matcher for capture-group highlighting) ----
+# Hyperscan produces match spans but not groups. PCRE2 re-matches those spans
+# to extract group offsets; PCRE2 syntax aligns with Hyperscan (both PCRE-flavored).
+set(PCRE2_BUILD_PCRE2_8 ON CACHE BOOL "" FORCE)
+set(PCRE2_BUILD_PCRE2_16 OFF CACHE BOOL "" FORCE)
+set(PCRE2_BUILD_PCRE2_32 OFF CACHE BOOL "" FORCE)
+set(PCRE2_SUPPORT_JIT ON CACHE BOOL "" FORCE)
+set(PCRE2_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(PCRE2_BUILD_PCRE2GREP OFF CACHE BOOL "" FORCE)
+set(PCRE2_SHOW_REPORT OFF CACHE BOOL "" FORCE)
+set(PCRE2_STATIC_PIC ON CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
+add_subdirectory(third_party/pcre2 EXCLUDE_FROM_ALL)
+
 # ---- Vectorscan ----
 option(KESTREL_VENDOR_VECTORSCAN "Build vectorscan from third_party" ON)
 if(KESTREL_VENDOR_VECTORSCAN)
@@ -100,6 +115,7 @@ add_executable(kestrel
     src/engine/scanner.cpp
     src/engine/source.cpp
     src/engine/line_index.cpp
+    src/engine/group_matcher.cpp
     src/ui/window.cpp
     src/ui/ui.cpp
 )
@@ -109,7 +125,7 @@ target_include_directories(kestrel PRIVATE
     ${CMAKE_BINARY_DIR}/third_party/vectorscan
     third_party/ImGuiFileDialog/stb
 )
-target_link_libraries(kestrel PRIVATE imgui imguifiledialog ${VECTORSCAN_TARGET} spdlog::spdlog)
+target_link_libraries(kestrel PRIVATE imgui imguifiledialog ${VECTORSCAN_TARGET} spdlog::spdlog pcre2-8-static)
 target_compile_definitions(kestrel PRIVATE
     KESTREL_FONT_REGULAR="${KESTREL_FONT_DIR}/JetBrainsMono-Regular.ttf"
     IMGUI_DISABLE_DEBUG_TOOLS

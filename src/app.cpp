@@ -1,5 +1,6 @@
 #include "kestrel/app.hpp"
 #include "kestrel/config.hpp"
+#include "kestrel/group_matcher.hpp"
 #include "kestrel/search.hpp"
 #include "kestrel/ui.hpp"
 #include "kestrel/util.hpp"
@@ -81,7 +82,7 @@ namespace kestrel
         // Ctrl+V - Paste to search pattern (when no input widget is focused)
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V) && !ImGui::IsAnyItemActive())
         {
-            const char* clipboard = ImGui::GetClipboardText();
+            const char *clipboard = ImGui::GetClipboardText();
             if (clipboard && clipboard[0] != '\0')
             {
                 strncpy(ui.search.query, clipboard, sizeof(ui.search.query) - 1);
@@ -213,6 +214,25 @@ namespace kestrel
                 flags |= HS_FLAG_MULTILINE;
 
             search.set_pattern(ui.search.query, flags);
+
+            if (ui.view.highlight_groups)
+            {
+                // Recompile secondary (group) matcher on pattern/flag change.
+                // PCRE2 extracts capture-group spans from matches Hyperscan already
+                // flagged; compile failure is silent (falls back to plain match rects).
+                static std::string gm_last_pattern;
+                static unsigned gm_last_flags = ~0u;
+                if (ui.search.query != gm_last_pattern || flags != gm_last_flags)
+                {
+                    gm_last_pattern = ui.search.query;
+                    gm_last_flags = flags;
+                    if (gm_last_pattern.empty())
+                        ui.groupmatch.group_matcher_.reset();
+                    else
+                        ui.groupmatch.group_matcher_ = GroupMatcher::compile(gm_last_pattern, flags);
+                }
+            }
+
             search.tick(glfwGetTime());
 
             // Update loading state from SearchController

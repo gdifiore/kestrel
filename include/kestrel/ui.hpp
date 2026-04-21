@@ -1,6 +1,9 @@
 #pragma once
 
+#include "kestrel/group_matcher.hpp"
+
 #include <imgui.h>
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
@@ -20,12 +23,27 @@ namespace kestrel
 
     struct ViewPrefs
     {
+        bool highlight_groups = true;
         bool display_only_filtered_lines = false;
         bool show_line_nums = true;
         bool snap_scroll = true;
         bool is_dark_mode = true;
         ImVec4 color_match = ImVec4(1.00f, 0.85f, 0.20f, 1.00f);
         ImVec4 color_scope = ImVec4(0.44f, 0.66f, 0.84f, 1.00f);
+
+        // Capture-group highlight palette. Groups beyond palette size wrap.
+        // Not user-customizable yet; hardcoded defaults live here so all
+        // draw paths reference a single source of truth.
+        std::array<ImVec4, 8> group_colors = {
+            ImVec4(0.40f, 0.80f, 1.00f, 1.00f), // 1 cyan
+            ImVec4(0.55f, 0.95f, 0.55f, 1.00f), // 2 green
+            ImVec4(1.00f, 0.55f, 0.85f, 1.00f), // 3 pink
+            ImVec4(0.90f, 0.60f, 0.30f, 1.00f), // 4 orange
+            ImVec4(0.75f, 0.65f, 1.00f, 1.00f), // 5 violet
+            ImVec4(1.00f, 0.95f, 0.50f, 1.00f), // 6 pale yellow
+            ImVec4(0.55f, 1.00f, 0.85f, 1.00f), // 7 mint
+            ImVec4(1.00f, 0.70f, 0.70f, 1.00f), // 8 salmon
+        };
     };
 
     struct CursorState
@@ -59,6 +77,11 @@ namespace kestrel
         int matches_after = 0;
     };
 
+    struct GroupMatch
+    {
+        std::optional<GroupMatcher> group_matcher_;
+    };
+
     // UI-owned state: user inputs + layout scratch. Derived/view state
     // (matches, source bytes, compile errors) is read live from SearchController.
     struct UiInputs
@@ -72,6 +95,7 @@ namespace kestrel
         FileState file;
         HotkeyTriggers hotkeys;
         Layout layout;
+        GroupMatch groupmatch;
     };
 
     void draw_ui(UiInputs &inputs, const SearchController &search);
