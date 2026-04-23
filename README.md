@@ -1,6 +1,6 @@
 # Kestrel
 
-Fast regex filter for logs. C++20, [vectorscan](https://github.com/VectorCamp/vectorscan) for regex, [Dear ImGui](https://github.com/ocornut/imgui) + [GLFW](https://github.com/glfw/glfw) for UI.
+Fast regex filter UI for logs.
 
 ## System dependencies
 
@@ -19,9 +19,12 @@ git submodule update --init --recursive
 
 Third-party sources live under `third_party/`:
 
-- `imgui/`      — ocornut/imgui
-- `glfw/`       — glfw/glfw
-- `vectorscan/` — VectorCamp/vectorscan
+- `imgui/`           — ocornut/imgui
+- `ImGuiFileDialog/` — aiekick/ImGuiFileDialog
+- `glfw/`            — glfw/glfw
+- `vectorscan/`      — VectorCamp/vectorscan
+- `pcre2/`           — PCRE2Project/pcre2
+- `doctest/`         — doctest/doctest (vendored header)
 
 ## Build
 
