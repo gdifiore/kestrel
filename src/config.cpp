@@ -126,7 +126,7 @@ namespace kestrel
                 else if (key.starts_with("recent_file_"))
                 {
                     // Parse recent_file_0, recent_file_1, etc.
-                    in.file.recent_files.emplace_back(val);
+                    in.file_prefs.recent_files.emplace_back(val);
                 }
             }
         }
@@ -157,9 +157,9 @@ namespace kestrel
         write_color(config, "color_scope", in.view.color_scope);
 
         // Save recent files (limit to 10)
-        for (size_t i = 0; i < std::min(in.file.recent_files.size(), size_t(10)); ++i)
+        for (size_t i = 0; i < std::min(in.file_prefs.recent_files.size(), size_t(10)); ++i)
         {
-            config << "recent_file_" << i << " = " << in.file.recent_files[i] << "\n";
+            config << "recent_file_" << i << " = " << in.file_prefs.recent_files[i] << "\n";
         }
 
         config.close();
@@ -173,7 +173,7 @@ namespace kestrel
 
     void add_recent_file(UiInputs &ui, const std::string &path)
     {
-        auto &recent = ui.file.recent_files;
+        auto &recent = ui.file_prefs.recent_files;
         recent.erase(std::remove(recent.begin(), recent.end(), path), recent.end());
         recent.insert(recent.begin(), path);
         if (recent.size() > 10)
@@ -184,7 +184,7 @@ namespace kestrel
 
     void cleanup_recent_files(UiInputs &ui)
     {
-        auto &recent = ui.file.recent_files;
+        auto &recent = ui.file_prefs.recent_files;
         recent.erase(
             std::remove_if(recent.begin(), recent.end(),
                            [](const std::string &path)

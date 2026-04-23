@@ -34,14 +34,14 @@ namespace kestrel
                 }
 
                 // Recent files submenu
-                if (!in.file.recent_files.empty() && ImGui::BeginMenu("Recent Files"))
+                if (!in.file_prefs.recent_files.empty() && ImGui::BeginMenu("Recent Files"))
                 {
                     // Clean up non-existent files first
                     cleanup_recent_files(in);
 
-                    for (size_t i = 0; i < in.file.recent_files.size(); ++i)
+                    for (size_t i = 0; i < in.file_prefs.recent_files.size(); ++i)
                     {
-                        const std::string &path = in.file.recent_files[i];
+                        const std::string &path = in.file_prefs.recent_files[i];
 
                         // Show just filename, full path in tooltip
                         std::filesystem::path file_path(path);
@@ -49,7 +49,7 @@ namespace kestrel
 
                         if (ImGui::MenuItem(display_name.c_str()))
                         {
-                            in.file.pending_open = path;
+                            in.file_load.pending_open = path;
                         }
 
                         if (ImGui::IsItemHovered())
@@ -61,7 +61,7 @@ namespace kestrel
                     ImGui::Separator();
                     if (ImGui::MenuItem("Clear Recent"))
                     {
-                        in.file.recent_files.clear();
+                        in.file_prefs.recent_files.clear();
                     }
 
                     ImGui::EndMenu();
@@ -425,15 +425,15 @@ namespace kestrel
             const bool has_source = search.has_source();
             auto source_bytes = has_source ? search.source_bytes() : std::span<const char>{};
 
-            if (in.file.loading)
+            if (in.file_load.loading)
             {
-                draw_loading_spinner(in.file.loading_path, in.file.loading_error);
+                draw_loading_spinner(in.file_load.loading_path, in.file_load.loading_error);
             }
             else if (!has_source || source_bytes.empty())
             {
-                if (!in.file.loading_error.empty())
+                if (!in.file_load.loading_error.empty())
                 {
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Failed to load file: %s", in.file.loading_error.c_str());
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Failed to load file: %s", in.file_load.loading_error.c_str());
                 }
                 else
                 {
@@ -551,7 +551,7 @@ namespace kestrel
         {
             if (dlg->IsOk())
             {
-                in.file.pending_open = dlg->GetFilePathName();
+                in.file_load.pending_open = dlg->GetFilePathName();
             }
             dlg->Close();
         }

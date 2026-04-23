@@ -51,25 +51,25 @@ namespace kestrel
     TEST_CASE("Recent files - add_recent_file")
     {
         UiInputs ui;
-        ui.file.recent_files = {"/existing/file1.txt", "/existing/file2.log"};
+        ui.file_prefs.recent_files = {"/existing/file1.txt", "/existing/file2.log"};
 
         SUBCASE("Add new file")
         {
             add_recent_file(ui, "/new/file.txt");
 
-            REQUIRE(ui.file.recent_files.size() == 3);
-            CHECK(ui.file.recent_files[0] == "/new/file.txt"); // Most recent first
-            CHECK(ui.file.recent_files[1] == "/existing/file1.txt");
-            CHECK(ui.file.recent_files[2] == "/existing/file2.log");
+            REQUIRE(ui.file_prefs.recent_files.size() == 3);
+            CHECK(ui.file_prefs.recent_files[0] == "/new/file.txt"); // Most recent first
+            CHECK(ui.file_prefs.recent_files[1] == "/existing/file1.txt");
+            CHECK(ui.file_prefs.recent_files[2] == "/existing/file2.log");
         }
 
         SUBCASE("Add existing file (should move to front)")
         {
             add_recent_file(ui, "/existing/file2.log");
 
-            REQUIRE(ui.file.recent_files.size() == 2);
-            CHECK(ui.file.recent_files[0] == "/existing/file2.log"); // Moved to front
-            CHECK(ui.file.recent_files[1] == "/existing/file1.txt");
+            REQUIRE(ui.file_prefs.recent_files.size() == 2);
+            CHECK(ui.file_prefs.recent_files[0] == "/existing/file2.log"); // Moved to front
+            CHECK(ui.file_prefs.recent_files[1] == "/existing/file1.txt");
         }
 
         SUBCASE("Add files beyond limit (should cap at 10)")
@@ -80,16 +80,16 @@ namespace kestrel
                 add_recent_file(ui, "/file" + std::to_string(i) + ".txt");
             }
 
-            CHECK(ui.file.recent_files.size() == 10);       // Should be capped at 10
-            CHECK(ui.file.recent_files[0] == "/file8.txt"); // Most recent
+            CHECK(ui.file_prefs.recent_files.size() == 10);       // Should be capped at 10
+            CHECK(ui.file_prefs.recent_files[0] == "/file8.txt"); // Most recent
 
             // Add one more - should drop the oldest
             add_recent_file(ui, "/newest.txt");
-            CHECK(ui.file.recent_files.size() == 10);
-            CHECK(ui.file.recent_files[0] == "/newest.txt");
+            CHECK(ui.file_prefs.recent_files.size() == 10);
+            CHECK(ui.file_prefs.recent_files[0] == "/newest.txt");
             // Original files should be pushed out
-            auto it = std::find(ui.file.recent_files.begin(), ui.file.recent_files.end(), "/existing/file2.log");
-            CHECK(it == ui.file.recent_files.end()); // Should be removed
+            auto it = std::find(ui.file_prefs.recent_files.begin(), ui.file_prefs.recent_files.end(), "/existing/file2.log");
+            CHECK(it == ui.file_prefs.recent_files.end()); // Should be removed
         }
     }
 
@@ -102,7 +102,7 @@ namespace kestrel
             // Create some temporary files
             TempFile temp1, temp2;
 
-            ui.file.recent_files = {
+            ui.file_prefs.recent_files = {
                 temp1.path_str(),         // Exists
                 "/nonexistent/file1.txt", // Doesn't exist
                 temp2.path_str(),         // Exists
@@ -113,39 +113,39 @@ namespace kestrel
             cleanup_recent_files(ui);
 
             // Should only keep existing files
-            REQUIRE(ui.file.recent_files.size() == 2);
-            CHECK(ui.file.recent_files[0] == temp1.path_str());
-            CHECK(ui.file.recent_files[1] == temp2.path_str());
+            REQUIRE(ui.file_prefs.recent_files.size() == 2);
+            CHECK(ui.file_prefs.recent_files[0] == temp1.path_str());
+            CHECK(ui.file_prefs.recent_files[1] == temp2.path_str());
         }
 
         SUBCASE("Handle empty list")
         {
-            ui.file.recent_files.clear();
+            ui.file_prefs.recent_files.clear();
 
             cleanup_recent_files(ui);
 
-            CHECK(ui.file.recent_files.empty());
+            CHECK(ui.file_prefs.recent_files.empty());
         }
 
         SUBCASE("All files exist")
         {
             TempFile temp1, temp2, temp3;
 
-            ui.file.recent_files = {
+            ui.file_prefs.recent_files = {
                 temp1.path_str(),
                 temp2.path_str(),
                 temp3.path_str()};
 
-            auto original_size = ui.file.recent_files.size();
+            auto original_size = ui.file_prefs.recent_files.size();
             cleanup_recent_files(ui);
 
             // All files should remain
-            CHECK(ui.file.recent_files.size() == original_size);
+            CHECK(ui.file_prefs.recent_files.size() == original_size);
         }
 
         SUBCASE("No files exist")
         {
-            ui.file.recent_files = {
+            ui.file_prefs.recent_files = {
                 "/nonexistent/file1.txt",
                 "/nonexistent/file2.log",
                 "/nonexistent/file3.md"};
@@ -153,7 +153,7 @@ namespace kestrel
             cleanup_recent_files(ui);
 
             // Should remove all nonexistent files
-            CHECK(ui.file.recent_files.empty());
+            CHECK(ui.file_prefs.recent_files.empty());
         }
     }
 
@@ -168,7 +168,7 @@ namespace kestrel
         test_ui.view.snap_scroll = false;
         test_ui.view.color_match = ImVec4(0.1f, 0.2f, 0.3f, 0.4f);
         test_ui.view.color_scope = ImVec4(0.5f, 0.6f, 0.7f, 0.8f);
-        test_ui.file.recent_files = {"/test/file1.txt", "/test/file2.log"};
+        test_ui.file_prefs.recent_files = {"/test/file1.txt", "/test/file2.log"};
 
         auto config_file = config_path();
         auto backup_file = config_file.string() + ".test_backup";
@@ -199,11 +199,11 @@ namespace kestrel
         CHECK(loaded_ui.view.color_match.w == doctest::Approx(test_ui.view.color_match.w));
 
         // Recent files should be preserved (limited to 10)
-        CHECK(loaded_ui.file.recent_files.size() <= 10);
-        if (loaded_ui.file.recent_files.size() >= 2)
+        CHECK(loaded_ui.file_prefs.recent_files.size() <= 10);
+        if (loaded_ui.file_prefs.recent_files.size() >= 2)
         {
-            CHECK(loaded_ui.file.recent_files[0] == "/test/file1.txt");
-            CHECK(loaded_ui.file.recent_files[1] == "/test/file2.log");
+            CHECK(loaded_ui.file_prefs.recent_files[0] == "/test/file1.txt");
+            CHECK(loaded_ui.file_prefs.recent_files[1] == "/test/file2.log");
         }
 
         // Restore original config
@@ -257,14 +257,14 @@ namespace kestrel
         }
 
         // Should cap at 10
-        CHECK(ui.file.recent_files.size() == 10);
-        CHECK(ui.file.recent_files[0] == "/stress/test/file14.txt"); // Most recent
-        CHECK(ui.file.recent_files[9] == "/stress/test/file5.txt");  // Oldest kept
+        CHECK(ui.file_prefs.recent_files.size() == 10);
+        CHECK(ui.file_prefs.recent_files[0] == "/stress/test/file14.txt"); // Most recent
+        CHECK(ui.file_prefs.recent_files[9] == "/stress/test/file5.txt");  // Oldest kept
 
         // Add duplicate - should move to front without increasing size
         add_recent_file(ui, "/stress/test/file10.txt");
-        CHECK(ui.file.recent_files.size() == 10);
-        CHECK(ui.file.recent_files[0] == "/stress/test/file10.txt");
+        CHECK(ui.file_prefs.recent_files.size() == 10);
+        CHECK(ui.file_prefs.recent_files[0] == "/stress/test/file10.txt");
     }
 
 } // namespace kestrel

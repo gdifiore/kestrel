@@ -183,14 +183,14 @@ namespace kestrel
             if (!is_valid_file_path(p))
             {
                 spdlog::warn("reject path: {}", p);
-                ui.file.loading_error = "Invalid file path";
+                ui.file_load.loading_error = "Invalid file path";
                 return false;
             }
 
             // Start async loading
-            ui.file.loading = true;
-            ui.file.loading_path = p;
-            ui.file.loading_error.clear();
+            ui.file_load.loading = true;
+            ui.file_load.loading_path = p;
+            ui.file_load.loading_error.clear();
             search.load_source_async(p);
             return true;
         };
@@ -236,22 +236,22 @@ namespace kestrel
             search.tick(glfwGetTime());
 
             // Update loading state from SearchController
-            bool was_loading = ui.file.loading;
-            ui.file.loading = search.is_loading();
+            bool was_loading = ui.file_load.loading;
+            ui.file_load.loading = search.is_loading();
 
-            if (was_loading && !ui.file.loading)
+            if (was_loading && !ui.file_load.loading)
             {
                 // Loading just finished
                 std::string error = search.get_loading_error();
                 if (!error.empty())
                 {
-                    ui.file.loading_error = error;
+                    ui.file_load.loading_error = error;
                 }
                 else if (search.has_source())
                 {
                     // Successfully loaded - add to recent files
-                    add_recent_file(ui, ui.file.loading_path);
-                    ui.file.loading_error.clear();
+                    add_recent_file(ui, ui.file_load.loading_path);
+                    ui.file_load.loading_error.clear();
                 }
             }
 
@@ -260,10 +260,10 @@ namespace kestrel
 
             w.begin_frame();
             draw_ui(ui, search);
-            if (ui.file.pending_open)
+            if (ui.file_load.pending_open)
             {
-                load_path(*ui.file.pending_open);
-                ui.file.pending_open.reset();
+                load_path(*ui.file_load.pending_open);
+                ui.file_load.pending_open.reset();
             }
             w.end_frame();
         }

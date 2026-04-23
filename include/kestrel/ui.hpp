@@ -53,12 +53,18 @@ namespace kestrel
         bool visible = true;
     };
 
-    struct FileState
+    // Persistent (saved to config).
+    struct FilePrefs
+    {
+        std::vector<std::string> recent_files;
+    };
+
+    // Transient load tracking; cleared each session.
+    struct FileLoadState
     {
         bool loading = false;
         std::string loading_path;
         std::string loading_error;
-        std::vector<std::string> recent_files;
         std::optional<std::string> pending_open;
     };
 
@@ -92,7 +98,8 @@ namespace kestrel
         SearchInputs search;
         ViewPrefs view;
         CursorState cursor;
-        FileState file;
+        FilePrefs file_prefs;
+        FileLoadState file_load;
         HotkeyTriggers hotkeys;
         Layout layout;
         GroupMatch groupmatch;
