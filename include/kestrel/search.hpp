@@ -78,6 +78,9 @@ namespace kestrel
 
         // Results from completed scans
         std::vector<Match> matches_;
+        // Running maximum of matches_[0..i].end, used by matches_in_range to
+        // locate matches that started before `lo` but extend into it.
+        std::vector<std::size_t> prefix_max_end_;
         std::vector<std::size_t> matched_lines_;
         std::string compile_error_;
         double last_scan_ms_ = 0.0;

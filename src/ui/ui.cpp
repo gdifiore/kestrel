@@ -4,6 +4,8 @@
 #include "kestrel/line_index.hpp"
 #include "kestrel/search.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
@@ -306,25 +308,40 @@ namespace kestrel
         // Revisit when we care about non-ASCII logs.
         for (auto match : matches_in_range)
         {
-            std::size_t col_start = match.start - start;
+            if (match.end <= start || match.start >= end)
+                continue;
+
+            std::size_t col_start = std::max(match.start, start) - start;
             std::size_t col_end = std::min(match.end, end) - start;
 
             ImVec2 p_min(cursor_pos.x + col_start * char_width, cursor_pos.y);
             ImVec2 p_max(cursor_pos.x + col_end * char_width, cursor_pos.y + line_height);
             ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, ImGui::GetColorU32(in.view.color_match));
 
-            if (in.view.highlight_groups && has_groups && match.end <= end)
+            if (in.view.highlight_groups && has_groups)
             {
+                // Hyperscan with DOTALL can report a single span covering
+                // multiple lines (e.g. `^...$` patterns where `.` eats `\n`).
+                // SOM_LEFTMOST then pins the start to the earliest line, so
+                // PCRE2 anchored at match.start would highlight groups on the
+                // wrong line. Detect multi-line matches and anchor PCRE2 to
+                // the current line bounds instead.
+                const bool single_line = match.start >= start && match.end <= end;
+                const std::size_t gm_start = single_line ? match.start : start;
+                const std::size_t gm_end   = single_line ? match.end   : end;
                 group_spans.clear();
                 group_indices.clear();
-                gm->match_into(source_bytes, match.start, match.end, group_spans, group_indices);
+                gm->match_into(source_bytes, gm_start, gm_end, group_spans, group_indices);
                 for (std::size_t i = 0; i < group_spans.size(); ++i)
                 {
                     const auto &g = group_spans[i];
-                    if (g.end <= g.start)
-                        continue; // zero-width: skip
-                    std::size_t g_col_start = g.start - start;
-                    std::size_t g_col_end = g.end - start;
+
+                    if (g.end <= g.start || g.end <= start || g.start >= end)
+                        continue;
+
+                    std::size_t g_col_start = std::max(g.start, start) - start;
+                    std::size_t g_col_end = std::min(g.end, end) - start;
+
                     ImVec2 g_min(cursor_pos.x + g_col_start * char_width, cursor_pos.y);
                     ImVec2 g_max(cursor_pos.x + g_col_end * char_width, cursor_pos.y + line_height);
                     ImVec4 col = group_palette[(group_indices[i] - 1) % palette_size];
@@ -431,6 +448,7 @@ namespace kestrel
                 const auto &matched = search.matched_lines();
                 const bool filter_view = in.view.display_only_filtered_lines && filtered;
                 const int view_count = filter_view ? static_cast<int>(matched.size()) : total_lines;
+
                 // Average over many glyphs: per-glyph rounding in CalcTextSize
                 // accumulates otherwise, and match rects drift off by ~1 char per ~40.
                 float char_width = ImGui::CalcTextSize(

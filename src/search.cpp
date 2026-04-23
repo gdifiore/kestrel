@@ -33,6 +33,7 @@ namespace kestrel
         std::lock_guard<std::mutex> lock(mutex_);
         pattern_.clear();
         matches_.clear();
+        prefix_max_end_.clear();
         matched_lines_.clear();
         compile_error_.clear();
         dirty_ = false;
@@ -84,6 +85,7 @@ namespace kestrel
 
         std::lock_guard<std::mutex> lock(mutex_);
         matches_.clear();
+        prefix_max_end_.clear();
         matched_lines_.clear();
         compile_error_.clear();
         dirty_ = false;
@@ -156,6 +158,7 @@ namespace kestrel
             {
                 // Empty pattern: clear matches immediately (no lock needed - UI thread only)
                 matches_.clear();
+                prefix_max_end_.clear();
                 matched_lines_.clear();
                 compile_error_.clear();
                 last_scan_ms_ = 0.0;
@@ -203,6 +206,7 @@ namespace kestrel
             // Clear search state
             pattern_.clear();
             matches_.clear();
+            prefix_max_end_.clear();
             matched_lines_.clear();
             compile_error_.clear();
             dirty_ = false;
@@ -220,23 +224,38 @@ namespace kestrel
     {
         std::lock_guard<std::mutex> lock(mutex_);
         matches_ = std::move(matches);
+        prefix_max_end_.resize(matches_.size());
+        std::size_t running_max = 0;
+        for (std::size_t i = 0; i < matches_.size(); ++i)
+        {
+            running_max = std::max(running_max, matches_[i].end);
+            prefix_max_end_[i] = running_max;
+        }
         matched_lines_ = std::move(matched_lines);
         compile_error_ = std::move(error);
         last_scan_ms_ = scan_ms;
         job_pending_ = false;
     }
 
-    // Relies on matches_ sorted by start (see rescan). Returns matches whose
-    // start falls in [lo, hi); matches extending past hi are included.
+    // Relies on matches_ sorted by start (see rescan). Returns a contiguous
+    // span covering every match that overlaps [lo, hi): any match whose
+    // [start, end) intersects the range. The span may include extra matches
+    // that do not overlap (callers must skip them) because overlap cannot be
+    // expressed as a single sorted range — a predecessor with end > lo may
+    // sit behind non-overlapping matches with smaller end values.
+    // Uses prefix_max_end_ (running max of .end) for log-n lookup of the
+    // earliest index that could overlap lo.
     std::span<const Match> SearchController::matches_in_range(size_t lo, size_t hi) const
     {
-        auto begin = std::lower_bound(matches_.begin(), matches_.end(), lo,
-                                      [](const Match &m, size_t o)
-                                      { return m.start < o; });
-        auto end = std::lower_bound(begin, matches_.end(), hi,
+        auto pm_begin = std::upper_bound(prefix_max_end_.begin(), prefix_max_end_.end(), lo);
+        std::size_t begin_idx = static_cast<std::size_t>(pm_begin - prefix_max_end_.begin());
+        if (begin_idx >= matches_.size())
+            return {};
+        auto end = std::lower_bound(matches_.begin() + begin_idx, matches_.end(), hi,
                                     [](const Match &m, size_t o)
                                     { return m.start < o; });
-        return std::span<const Match>(&*begin, end - begin);
+        std::size_t count = static_cast<std::size_t>(end - (matches_.begin() + begin_idx));
+        return std::span<const Match>(matches_.data() + begin_idx, count);
     }
 
     std::size_t SearchController::matches_before(std::size_t offset) const
