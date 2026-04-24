@@ -32,6 +32,7 @@ add_executable(search_controller_test
     ../src/engine/scanner.cpp
     ../src/engine/source.cpp
     ../src/engine/line_index.cpp
+    ../src/engine/timestamp_index.cpp
 )
 target_include_directories(search_controller_test PRIVATE
     ../include

@@ -202,6 +202,7 @@ namespace kestrel
         {
             source_ = std::move(source);
             lines_ = std::move(lines);
+            ts_index_ = TimestampIndex(source_->bytes(), *lines_);
 
             // Clear search state
             pattern_.clear();

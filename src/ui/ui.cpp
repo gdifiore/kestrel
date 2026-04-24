@@ -133,12 +133,6 @@ namespace kestrel
 
     static void draw_toolbar(UiInputs &in, const SearchController &search)
     {
-        ImGui::SameLine();
-        if (ImGui::Button(" * "))
-            in.show_settings = !in.show_settings;
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Settings");
-
         ImGui::Checkbox("Aa", &in.search.case_sensitive);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Case sensitive");
@@ -189,7 +183,63 @@ namespace kestrel
         }
     }
 
-    static void draw_search_bar(UiInputs &in, const SearchController &search)
+    static void format_time_label(int64_t epoch, bool include_date, char *out, size_t cap)
+    {
+        time_t t = (time_t)epoch;
+        struct tm g;
+        gmtime_r(&t, &g);
+        if (include_date)
+            strftime(out, cap, "%Y-%m-%d %H:%M:%S", &g);
+        else
+            strftime(out, cap, "%H:%M:%S", &g);
+    }
+
+    static void draw_time_range(UiInputs &in, const SearchController &search)
+    {
+        const TimestampIndex &ts = search.timestamp_index();
+        if (ts.empty())
+            return;
+        // Needs ~500px for checkbox + two 200px sliders. Skip if remaining
+        // toolbar width can't hold them, so widgets don't wrap/overflow.
+        if (ImGui::GetContentRegionAvail().x < 500.0f)
+            return;
+
+        auto &tf = in.layout.filters.time;
+
+        // Reset bounds on new file / new timestamp range.
+        if (ts.min_ts() != tf.source_min || ts.max_ts() != tf.source_max)
+        {
+            tf.source_min = ts.min_ts();
+            tf.source_max = ts.max_ts();
+            tf.start = ts.min_ts();
+            tf.end = ts.max_ts();
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+        ImGui::Checkbox("time", &tf.active);
+        if (!tf.active)
+            return;
+
+        const bool span_multiday = (ts.max_ts() - ts.min_ts()) >= 24 * 3600;
+        char sbuf[32], ebuf[32];
+        format_time_label(tf.start, span_multiday, sbuf, sizeof(sbuf));
+        format_time_label(tf.end, span_multiday, ebuf, sizeof(ebuf));
+
+        int64_t lo = ts.min_ts();
+        int64_t hi = ts.max_ts();
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::SliderScalar("##ts_start", ImGuiDataType_S64,
+                            &tf.start, &lo, &tf.end, sbuf);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::SliderScalar("##ts_end", ImGuiDataType_S64,
+                            &tf.end, &tf.start, &hi, ebuf);
+    }
+
+    static void draw_search_bar(UiInputs &in, const SearchController &)
     {
         ImGuiViewport *vp = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, vp->WorkPos.y));
@@ -206,13 +256,35 @@ namespace kestrel
         {
             const float gear_w = ImGui::CalcTextSize(" * ").x + ImGui::GetStyle().FramePadding.x * 2.0f;
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - gear_w - ImGui::GetStyle().ItemSpacing.x);
-
             draw_query_input(in);
-            draw_toolbar(in, search);
-
-            // Measure after all widgets are placed so the results window below
-            // sits flush, even when the error row appears or disappears.
+            ImGui::SameLine();
+            if (ImGui::Button(" * "))
+                in.show_settings = !in.show_settings;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Settings");
             in.layout.search_bar_h = ImGui::GetWindowHeight();
+        }
+        ImGui::End();
+    }
+
+    static void draw_toolbar_row(UiInputs &in, const SearchController &search)
+    {
+        ImGuiViewport *vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, vp->WorkPos.y + in.layout.search_bar_h));
+        ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, 0));
+
+        ImGuiWindowFlags flags =
+            ImGuiWindowFlags_NoDecoration |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+        if (ImGui::Begin("##toolbar", nullptr, flags))
+        {
+            draw_toolbar(in, search);
+            draw_time_range(in, search);
+            in.layout.toolbar_h = ImGui::GetWindowHeight();
         }
         ImGui::End();
     }
@@ -249,6 +321,54 @@ namespace kestrel
         }
     }
 
+    // Scan the prefix of `line` for a log level keyword. Returns tint color or
+    // zero alpha if none. Only first 64 bytes scanned — level keywords
+    // conventionally appear near start of the line. Match must be word-bounded
+    // (alpha char before/after disqualifies) so identifiers like getError(),
+    // /var/log/errors.log, INFORMATIONAL don't tint.
+    static ImVec4 detect_log_level_tint(std::span<const char> line)
+    {
+        size_t n = std::min<size_t>(line.size(), 64);
+        auto is_alpha = [](char c) {
+            return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+        };
+        auto match_at = [&](size_t i, const char *kw) {
+            size_t k = 0;
+            while (kw[k] && i + k < n &&
+                   (line[i + k] == kw[k] || line[i + k] == kw[k] + ('a' - 'A')))
+                k++;
+            if (kw[k] != '\0')
+                return false;
+            // Trailing word boundary.
+            if (i + k < n && is_alpha(line[i + k]))
+                return false;
+            return true;
+        };
+        for (size_t i = 0; i < n; i++)
+        {
+            // Leading word boundary.
+            if (i > 0 && is_alpha(line[i - 1]))
+                continue;
+            char c = line[i];
+            if (c != 'E' && c != 'W' && c != 'I' && c != 'D' && c != 'T' && c != 'F' &&
+                c != 'C' &&
+                c != 'e' && c != 'w' && c != 'i' && c != 'd' && c != 't' && c != 'f' &&
+                c != 'c')
+                continue;
+            if (match_at(i, "ERROR") || match_at(i, "FATAL") || match_at(i, "CRITICAL"))
+                return ImVec4(1.0f, 0.25f, 0.25f, 0.22f);
+            if (match_at(i, "WARN") || match_at(i, "WARNING"))
+                return ImVec4(1.0f, 0.75f, 0.20f, 0.20f);
+            if (match_at(i, "INFO"))
+                return ImVec4(0.40f, 0.70f, 1.0f, 0.16f);
+            if (match_at(i, "DEBUG"))
+                return ImVec4(0.55f, 0.55f, 0.55f, 0.16f);
+            if (match_at(i, "TRACE"))
+                return ImVec4(0.40f, 0.40f, 0.40f, 0.12f);
+        }
+        return ImVec4(0, 0, 0, 0);
+    }
+
     static void draw_line_row(UiInputs &in, const SearchController &search,
                               const LineIndex &lines, int total_lines,
                               std::span<const char> source_bytes, int line_idx,
@@ -276,6 +396,17 @@ namespace kestrel
         const char *p = source_bytes.data() + start;
 
         ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+
+        if (in.view.log_level_tint)
+        {
+            ImVec4 tint = detect_log_level_tint(std::span<const char>(p, end - start));
+            if (tint.w > 0.0f)
+            {
+                ImVec2 lmin(cursor_pos.x, cursor_pos.y);
+                ImVec2 lmax(cursor_pos.x + ImGui::GetContentRegionAvail().x, cursor_pos.y + line_height);
+                ImGui::GetWindowDrawList()->AddRectFilled(lmin, lmax, ImGui::GetColorU32(tint));
+            }
+        }
 
         // Cursor line highlighting
         if (in.cursor.visible && line_idx == static_cast<int>(in.cursor.line))
@@ -363,25 +494,33 @@ namespace kestrel
         }
     }
 
-    static void autoscroll_to_cursor(const UiInputs &in, const std::vector<size_t> &matched,
-                                     bool filter_view, int view_count,
-                                     const ImGuiListClipper &clipper)
+    // Map source-line to display-row in the current view. Returns -1 if not present.
+    static int source_to_display_row(const UiInputs &in, const std::vector<size_t> &matched,
+                                     bool filter_view, size_t source_line)
     {
-        const int cursor_line = static_cast<int>(in.cursor.line);
-
-        int cursor_view_pos = cursor_line;
+        if (in.layout.view_has_custom)
+        {
+            const auto &v = in.layout.view_lines;
+            auto it = std::lower_bound(v.begin(), v.end(), source_line);
+            if (it != v.end() && *it == source_line)
+                return (int)(it - v.begin());
+            return -1;
+        }
         if (filter_view)
         {
-            cursor_view_pos = -1;
-            for (int i = 0; i < view_count; ++i)
-            {
-                if (static_cast<int>(matched[i]) == cursor_line)
-                {
-                    cursor_view_pos = i;
-                    break;
-                }
-            }
+            auto it = std::lower_bound(matched.begin(), matched.end(), source_line);
+            if (it != matched.end() && *it == source_line)
+                return (int)(it - matched.begin());
+            return -1;
         }
+        return (int)source_line;
+    }
+
+    static void autoscroll_to_cursor(const UiInputs &in, const std::vector<size_t> &matched,
+                                     bool filter_view,
+                                     const ImGuiListClipper &clipper)
+    {
+        int cursor_view_pos = source_to_display_row(in, matched, filter_view, in.cursor.line);
 
         if (cursor_view_pos >= 0 &&
             (cursor_view_pos < clipper.DisplayStart ||
@@ -394,14 +533,95 @@ namespace kestrel
         }
     }
 
+    // Build/refresh in.layout.view_lines once per frame. Skips work when none
+    // of the inputs (time filter range/state, regex filter view, matched set
+    // identity, total line count) changed since last frame.
+    static void update_view_cache(UiInputs &in, const SearchController &search)
+    {
+        if (!search.has_source())
+        {
+            in.layout.view_has_custom = false;
+            in.layout.view_lines.clear();
+            in.layout.view_cache_matched_ptr = nullptr;
+            in.layout.view_cache_matched_size = (size_t)-1;
+            in.layout.view_cache_total_lines = -1;
+            return;
+        }
+        const int total_lines = (int)search.line_index().line_count();
+        const auto &matched = search.matched_lines();
+        const bool filtered = !search.pattern_empty();
+        const bool filter_view = in.view.display_only_filtered_lines && filtered;
+
+        // Resolve which filters are active this frame. New filters: append a
+        // (state, predicate) pair below + a comparison line in `same`.
+        const auto &tf = in.layout.filters.time;
+        const bool time_active = tf.active && !search.timestamp_index().empty();
+        const bool needs_custom = time_active; // filter_view alone reuses matched directly
+
+        if (!needs_custom)
+        {
+            in.layout.view_has_custom = false;
+            in.layout.view_lines.clear();
+            in.layout.view_cache_matched_ptr = nullptr;
+            in.layout.view_cache_matched_size = (size_t)-1;
+            in.layout.view_cache_total_lines = -1;
+            return;
+        }
+
+        const bool same =
+            in.layout.view_has_custom &&
+            in.layout.view_cache_time_filter == time_active &&
+            in.layout.view_cache_filter_view == filter_view &&
+            in.layout.view_cache_time_start == tf.start &&
+            in.layout.view_cache_time_end == tf.end &&
+            in.layout.view_cache_matched_ptr == matched.data() &&
+            in.layout.view_cache_matched_size == matched.size() &&
+            in.layout.view_cache_total_lines == total_lines;
+        if (same)
+            return;
+
+        const TimestampIndex &ts = search.timestamp_index();
+        auto pass = [&](size_t line) {
+            // AND of all active filter predicates.
+            if (time_active)
+            {
+                int64_t t = ts.at(line);
+                if (t == TimestampIndex::kNone || t < tf.start || t > tf.end)
+                    return false;
+            }
+            return true;
+        };
+        in.layout.view_lines.clear();
+        if (filter_view)
+        {
+            for (size_t m : matched)
+                if (pass(m))
+                    in.layout.view_lines.push_back(m);
+        }
+        else
+        {
+            for (size_t i = 0; i < (size_t)total_lines; i++)
+                if (pass(i))
+                    in.layout.view_lines.push_back(i);
+        }
+        in.layout.view_has_custom = true;
+        in.layout.view_cache_time_filter = time_active;
+        in.layout.view_cache_filter_view = filter_view;
+        in.layout.view_cache_time_start = tf.start;
+        in.layout.view_cache_time_end = tf.end;
+        in.layout.view_cache_matched_ptr = matched.data();
+        in.layout.view_cache_matched_size = matched.size();
+        in.layout.view_cache_total_lines = total_lines;
+    }
+
     static void draw_results(UiInputs &in, const SearchController &search)
     {
         ImGuiViewport *vp = ImGui::GetMainViewport();
-        float window_pos_y = vp->WorkPos.y + in.layout.search_bar_h;
+        float window_pos_y = vp->WorkPos.y + (in.layout.search_bar_h + in.layout.toolbar_h);
 
         const float results_w = vp->WorkSize.x - (in.view.show_minimap ? MINIMAP_WIDTH : 0);
         ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, window_pos_y));
-        ImGui::SetNextWindowSize(ImVec2(results_w, vp->WorkSize.y - in.layout.search_bar_h));
+        ImGui::SetNextWindowSize(ImVec2(results_w, vp->WorkSize.y - (in.layout.search_bar_h + in.layout.toolbar_h)));
 
         // NoDecoration would strip the scrollbar too — spell out the flags we want.
         ImGuiWindowFlags flags =
@@ -460,7 +680,13 @@ namespace kestrel
                 const bool filtered = !search.pattern_empty();
                 const auto &matched = search.matched_lines();
                 const bool filter_view = in.view.display_only_filtered_lines && filtered;
-                const int view_count = filter_view ? static_cast<int>(matched.size()) : total_lines;
+                const bool use_custom_view = in.layout.view_has_custom;
+                const std::vector<size_t> &displayed_lines = in.layout.view_lines;
+                const int view_count = use_custom_view
+                                           ? (int)displayed_lines.size()
+                                       : filter_view
+                                           ? static_cast<int>(matched.size())
+                                           : total_lines;
 
                 // Average over many glyphs: per-glyph rounding in CalcTextSize
                 // accumulates otherwise, and match rects drift off by ~1 char per ~40.
@@ -481,7 +707,9 @@ namespace kestrel
                 {
                     for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
                     {
-                        const int line_idx = filter_view ? static_cast<int>(matched[i]) : i;
+                        const int line_idx = use_custom_view ? (int)displayed_lines[i]
+                                             : filter_view   ? static_cast<int>(matched[i])
+                                                             : i;
                         draw_line_row(in, search, lines, total_lines, source_bytes,
                                       line_idx, line_height, char_width);
                     }
@@ -491,7 +719,7 @@ namespace kestrel
                     (in.cursor.line != in.layout.last_cursor_line ||
                      in.cursor.offset != in.layout.last_cursor_offset))
                 {
-                    autoscroll_to_cursor(in, matched, filter_view, view_count, clipper);
+                    autoscroll_to_cursor(in, matched, filter_view, clipper);
                     in.layout.last_cursor_line = in.cursor.line;
                     in.layout.last_cursor_offset = in.cursor.offset;
                 }
@@ -510,29 +738,24 @@ namespace kestrel
             return;
         ImGuiViewport *vp = ImGui::GetMainViewport();
         float window_pos_x = vp->WorkPos.x + vp->WorkSize.x - MINIMAP_WIDTH;
-        float window_pos_y = vp->WorkPos.y + in.layout.search_bar_h;
-        int window_height_px = (int)(vp->WorkSize.y - in.layout.search_bar_h);
+        float window_pos_y = vp->WorkPos.y + (in.layout.search_bar_h + in.layout.toolbar_h);
+        int window_height_px = (int)(vp->WorkSize.y - (in.layout.search_bar_h + in.layout.toolbar_h));
 
         const std::vector<size_t> &orig_matches = search.matched_lines();
-        const bool filtered = in.view.display_only_filtered_lines;
+        const bool pattern_active = !search.pattern_empty();
+        const bool filtered = in.view.display_only_filtered_lines && pattern_active;
+        const bool use_custom_view = in.layout.view_has_custom;
+        const std::vector<size_t> &view_lines = in.layout.view_lines;
         int line_count;
-        if (filtered)
+        if (use_custom_view)
+            line_count = (int)view_lines.size();
+        else if (filtered)
             line_count = (int)orig_matches.size();
         else
-            line_count = search.line_index().line_count();
+            line_count = (int)search.line_index().line_count();
 
         // cursor's row index in the displayed coordinate space (not source line).
-        int cursor_row = -1;
-        if (filtered)
-        {
-            auto it = std::lower_bound(orig_matches.begin(), orig_matches.end(), in.cursor.line);
-            if (it != orig_matches.end() && *it == in.cursor.line)
-                cursor_row = (int)(it - orig_matches.begin());
-        }
-        else
-        {
-            cursor_row = (int)in.cursor.line;
-        }
+        int cursor_row = source_to_display_row(in, orig_matches, filtered, in.cursor.line);
 
         ImGui::SetNextWindowPos(ImVec2(window_pos_x, window_pos_y));
         ImGui::SetNextWindowSize(ImVec2(MINIMAP_WIDTH, (float)window_height_px));
@@ -570,7 +793,9 @@ namespace kestrel
                 float mouse_y = ImGui::GetIO().MousePos.y - btn_min.y;
                 int target = (int)((mouse_y / (float)window_height_px) * line_count);
                 target = std::clamp(target, 0, line_count - 1);
-                const size_t src_line_for_target = filtered ? orig_matches[target] : (size_t)target;
+                const size_t src_line_for_target = use_custom_view ? view_lines[target]
+                                                   : filtered      ? orig_matches[target]
+                                                                   : (size_t)target;
 
                 if (ImGui::IsItemActive())
                 {
@@ -598,12 +823,25 @@ namespace kestrel
                 }
                 float mark_h = std::max(row_size_f, 1.0f);
 
-                // Match marks — iterate matches only (O(m), not O(n)).
+                // Match marks — iterate matches only (O(m), not O(n)). Under
+                // custom view, map each match's source line to its display row
+                // via binary search; matches outside the view are skipped.
                 ImU32 match_col = ImGui::GetColorU32(ImVec4(
                     in.view.color_match.x, in.view.color_match.y, in.view.color_match.z, 0.6f));
                 for (size_t k = 0; k < orig_matches.size(); k++)
                 {
-                    int row = filtered ? (int)k : (int)orig_matches[k];
+                    int row;
+                    if (use_custom_view)
+                    {
+                        auto it = std::lower_bound(view_lines.begin(), view_lines.end(), orig_matches[k]);
+                        if (it == view_lines.end() || *it != orig_matches[k])
+                            continue;
+                        row = (int)(it - view_lines.begin());
+                    }
+                    else
+                    {
+                        row = filtered ? (int)k : (int)orig_matches[k];
+                    }
                     if (row >= line_count)
                         break;
                     float y = window_pos_y + row * row_size_f;
@@ -682,6 +920,7 @@ namespace kestrel
         {
             ImGui::SeparatorText("Display");
             ImGui::Checkbox("Show minimap", &in.view.show_minimap);
+            ImGui::Checkbox("Tint by log level", &in.view.log_level_tint);
             ImGui::Checkbox("Snap scroll to lines", &in.view.snap_scroll);
             ImGui::Checkbox("Show only filtered results", &in.view.display_only_filtered_lines);
             ImGui::Checkbox("Color each regex capture group individually", &in.view.highlight_groups);
@@ -776,7 +1015,9 @@ namespace kestrel
     void draw_ui(UiInputs &in, const SearchController &search)
     {
         draw_main_menu(in);
+        draw_toolbar_row(in, search);
         draw_search_bar(in, search);
+        update_view_cache(in, search);
         draw_results(in, search);
         draw_minimap(in, search);
         draw_settings_popup(in);

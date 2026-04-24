@@ -4,6 +4,7 @@
 #include "kestrel/scanner.hpp"
 #include "kestrel/source.hpp"
 #include "kestrel/search_worker.hpp"
+#include "kestrel/timestamp_index.hpp"
 
 #include <atomic>
 #include <memory>
@@ -35,6 +36,7 @@ namespace kestrel
         bool has_source() const noexcept { return source_ != nullptr; }
         std::span<const char> source_bytes() const;
         const LineIndex &line_index() const; // precondition: has_source()
+        const TimestampIndex &timestamp_index() const noexcept { return ts_index_; }
 
         void set_pattern(std::string_view pattern, unsigned flags);
         void set_debounce_ms(int ms) noexcept { debounce_ms_ = ms; }
@@ -70,6 +72,7 @@ namespace kestrel
 
         std::shared_ptr<Source> source_;
         std::optional<LineIndex> lines_;
+        TimestampIndex ts_index_;
 
         std::string pattern_;
         unsigned flags_ = 0;
