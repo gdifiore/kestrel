@@ -115,6 +115,7 @@ add_executable(kestrel
     src/engine/scanner.cpp
     src/engine/source.cpp
     src/engine/line_index.cpp
+    src/engine/timestamp_index.cpp
     src/engine/group_matcher.cpp
     src/ui/window.cpp
     src/ui/ui.cpp

@@ -4,6 +4,7 @@
 
 #include <imgui.h>
 #include <array>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -78,10 +79,30 @@ namespace kestrel
         char goto_line_input[32] = {};
     };
 
+    // Per-frame display-view filters. Each filter is independent; the displayed
+    // line set is the intersection of every active filter (∩ regex matches when
+    // display_only_filtered_lines is on). Add new filters here and extend
+    // update_view_cache() to AND them into the predicate.
+    struct ViewFilters
+    {
+        // Time-range filter — keep lines whose parsed timestamp is in [start, end].
+        struct Time
+        {
+            bool active = false;
+            int64_t start = 0;
+            int64_t end = 0;
+            // Snapshot of TimestampIndex bounds; on change, slider bounds are
+            // reset to the new [min, max].
+            int64_t source_min = 0;
+            int64_t source_max = 0;
+        } time;
+    };
+
     struct Layout
     {
         float search_bar_h = 0.0f;
         float toolbar_h = 0.0f;
+        ViewFilters filters;
         int matches_before = 0;
         int matches_after = 0;
         int visible_line_first = 0;
@@ -89,6 +110,20 @@ namespace kestrel
         int pending_scroll_line = -1;
         size_t last_cursor_line = (size_t)-1;
         size_t last_cursor_offset = (size_t)-1;
+
+        // Display view: when view_has_custom, view_lines holds the source-line
+        // indices to render in row order (regex-filter ∩ time-filter).
+        // Otherwise the view is identity (row i → line i).
+        std::vector<size_t> view_lines;
+        bool view_has_custom = false;
+        // Cache keys for view_lines — invalidate when any input changes.
+        int64_t view_cache_time_start = 0;
+        int64_t view_cache_time_end = 0;
+        bool view_cache_time_filter = false;
+        bool view_cache_filter_view = false;
+        size_t view_cache_matched_size = (size_t)-1;
+        const size_t *view_cache_matched_ptr = nullptr;
+        int view_cache_total_lines = -1;
     };
 
     struct GroupMatch
