@@ -29,6 +29,7 @@ namespace kestrel
         bool show_line_nums = true;
         bool snap_scroll = true;
         bool is_dark_mode = true;
+        bool log_level_tint = true;
         ImVec4 color_match = ImVec4(1.00f, 0.85f, 0.20f, 1.00f);
         ImVec4 color_scope = ImVec4(0.44f, 0.66f, 0.84f, 1.00f);
 
@@ -80,6 +81,7 @@ namespace kestrel
     struct Layout
     {
         float search_bar_h = 0.0f;
+        float toolbar_h = 0.0f;
         int matches_before = 0;
         int matches_after = 0;
         int visible_line_first = 0;
