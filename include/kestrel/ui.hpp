@@ -10,7 +10,7 @@
 
 namespace kestrel
 {
-
+    inline constexpr int MINIMAP_WIDTH = 80; // px
     class SearchController;
 
     struct SearchInputs
@@ -23,6 +23,7 @@ namespace kestrel
 
     struct ViewPrefs
     {
+        bool show_minimap = true;
         bool highlight_groups = true;
         bool display_only_filtered_lines = false;
         bool show_line_nums = true;
@@ -81,6 +82,11 @@ namespace kestrel
         float search_bar_h = 0.0f;
         int matches_before = 0;
         int matches_after = 0;
+        int visible_line_first = 0;
+        int visible_line_last = 0;
+        int pending_scroll_line = -1;
+        size_t last_cursor_line = (size_t)-1;
+        size_t last_cursor_offset = (size_t)-1;
     };
 
     struct GroupMatch

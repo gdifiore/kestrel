@@ -15,3 +15,4 @@ CMakeUserPresets.json
 *.txt
 poc/**
 docs/**
+buildandrun.sh

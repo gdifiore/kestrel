@@ -6,14 +6,17 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <span>
+#include <vector>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <ImGuiFileDialog.h>
 
 namespace kestrel
@@ -209,7 +212,7 @@ namespace kestrel
 
             // Measure after all widgets are placed so the results window below
             // sits flush, even when the error row appears or disappears.
-            in.layout.search_bar_h = ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
+            in.layout.search_bar_h = ImGui::GetWindowHeight();
         }
         ImGui::End();
     }
@@ -328,7 +331,7 @@ namespace kestrel
                 // the current line bounds instead.
                 const bool single_line = match.start >= start && match.end <= end;
                 const std::size_t gm_start = single_line ? match.start : start;
-                const std::size_t gm_end   = single_line ? match.end   : end;
+                const std::size_t gm_end = single_line ? match.end : end;
                 group_spans.clear();
                 group_indices.clear();
                 gm->match_into(source_bytes, gm_start, gm_end, group_spans, group_indices);
@@ -395,8 +398,10 @@ namespace kestrel
     {
         ImGuiViewport *vp = ImGui::GetMainViewport();
         float window_pos_y = vp->WorkPos.y + in.layout.search_bar_h;
+
+        const float results_w = vp->WorkSize.x - (in.view.show_minimap ? MINIMAP_WIDTH : 0);
         ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, window_pos_y));
-        ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, vp->WorkSize.y - in.layout.search_bar_h));
+        ImGui::SetNextWindowSize(ImVec2(results_w, vp->WorkSize.y - in.layout.search_bar_h));
 
         // NoDecoration would strip the scrollbar too — spell out the flags we want.
         ImGuiWindowFlags flags =
@@ -409,6 +414,14 @@ namespace kestrel
 
         if (ImGui::Begin("##results", nullptr, flags))
         {
+            if (in.layout.pending_scroll_line >= 0)
+            {
+                float line_h = ImGui::GetTextLineHeightWithSpacing();
+                float target = in.layout.pending_scroll_line * line_h - ImGui::GetWindowHeight() * 0.5f;
+                ImGui::SetScrollY(std::max(0.0f, target));
+                in.layout.pending_scroll_line = -1;
+            }
+
             // Snap scroll to whole lines — prevents half-clipped rows when the
             // trackpad lands on a sub-line offset. Skip near max scroll: flooring
             // there would drop the scroll below max and clip the last line.
@@ -474,9 +487,155 @@ namespace kestrel
                     }
                 }
 
-                if (in.cursor.visible && has_source)
+                if (in.cursor.visible && has_source &&
+                    (in.cursor.line != in.layout.last_cursor_line ||
+                     in.cursor.offset != in.layout.last_cursor_offset))
                 {
                     autoscroll_to_cursor(in, matched, filter_view, view_count, clipper);
+                    in.layout.last_cursor_line = in.cursor.line;
+                    in.layout.last_cursor_offset = in.cursor.offset;
+                }
+            }
+            float line_h = ImGui::GetTextLineHeightWithSpacing();
+            in.layout.visible_line_first = (int)(ImGui::GetScrollY() / line_h);
+            in.layout.visible_line_last = in.layout.visible_line_first + (int)(ImGui::GetWindowHeight() / line_h);
+        }
+
+        ImGui::End();
+    }
+
+    static void draw_minimap(UiInputs &in, const SearchController &search)
+    {
+        if (!in.view.show_minimap)
+            return;
+        ImGuiViewport *vp = ImGui::GetMainViewport();
+        float window_pos_x = vp->WorkPos.x + vp->WorkSize.x - MINIMAP_WIDTH;
+        float window_pos_y = vp->WorkPos.y + in.layout.search_bar_h;
+        int window_height_px = (int)(vp->WorkSize.y - in.layout.search_bar_h);
+
+        const std::vector<size_t> &orig_matches = search.matched_lines();
+        const bool filtered = in.view.display_only_filtered_lines;
+        int line_count;
+        if (filtered)
+            line_count = (int)orig_matches.size();
+        else
+            line_count = search.line_index().line_count();
+
+        // cursor's row index in the displayed coordinate space (not source line).
+        int cursor_row = -1;
+        if (filtered)
+        {
+            auto it = std::lower_bound(orig_matches.begin(), orig_matches.end(), in.cursor.line);
+            if (it != orig_matches.end() && *it == in.cursor.line)
+                cursor_row = (int)(it - orig_matches.begin());
+        }
+        else
+        {
+            cursor_row = (int)in.cursor.line;
+        }
+
+        ImGui::SetNextWindowPos(ImVec2(window_pos_x, window_pos_y));
+        ImGui::SetNextWindowSize(ImVec2(MINIMAP_WIDTH, (float)window_height_px));
+
+        ImGuiWindowFlags flags =
+            ImGuiWindowFlags_NoDecoration |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+        if (ImGui::Begin("##minimap", nullptr, flags))
+        {
+            ImDrawList *dl = ImGui::GetWindowDrawList();
+
+            // Background fill for contrast.
+            dl->AddRectFilled(
+                ImVec2(window_pos_x, window_pos_y),
+                ImVec2(window_pos_x + MINIMAP_WIDTH, window_pos_y + window_height_px),
+                ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.15f)));
+
+            ImVec2 btn_min = ImGui::GetCursorScreenPos();
+            ImGui::InvisibleButton("##minimap_hit", ImVec2(MINIMAP_WIDTH, (float)window_height_px));
+            if (ImGui::IsItemHovered() && ImGui::GetIO().MouseWheel != 0.0f)
+            {
+                if (ImGuiWindow *w = ImGui::FindWindowByName("##results"))
+                {
+                    float line_h = ImGui::GetTextLineHeightWithSpacing();
+                    ImGui::SetScrollY(w, w->Scroll.y - ImGui::GetIO().MouseWheel * line_h * 3.0f);
+                }
+            }
+
+            if (line_count > 0)
+            {
+                // Target line in display-row space under the mouse.
+                float mouse_y = ImGui::GetIO().MousePos.y - btn_min.y;
+                int target = (int)((mouse_y / (float)window_height_px) * line_count);
+                target = std::clamp(target, 0, line_count - 1);
+                const size_t src_line_for_target = filtered ? orig_matches[target] : (size_t)target;
+
+                if (ImGui::IsItemActive())
+                {
+                    in.layout.pending_scroll_line = target;
+                    in.cursor.line = src_line_for_target;
+                    in.cursor.offset = 0;
+                    // Suppress autoscroll-to-cursor next frame; pending_scroll_line
+                    // already positions the view, and autoscroll would just redo it.
+                    in.layout.last_cursor_line = in.cursor.line;
+                    in.layout.last_cursor_offset = in.cursor.offset;
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("line %zu", src_line_for_target + 1);
+
+                // Row size: cap small-file rows to 4px; large files scale to fit exactly.
+                float row_size_f;
+                if (line_count < window_height_px)
+                {
+                    const float MAX_ROW_PX = 4.0f;
+                    row_size_f = std::min((float)window_height_px / (float)line_count, MAX_ROW_PX);
+                }
+                else
+                {
+                    row_size_f = (float)window_height_px / (float)line_count;
+                }
+                float mark_h = std::max(row_size_f, 1.0f);
+
+                // Match marks — iterate matches only (O(m), not O(n)).
+                ImU32 match_col = ImGui::GetColorU32(ImVec4(
+                    in.view.color_match.x, in.view.color_match.y, in.view.color_match.z, 0.6f));
+                for (size_t k = 0; k < orig_matches.size(); k++)
+                {
+                    int row = filtered ? (int)k : (int)orig_matches[k];
+                    if (row >= line_count)
+                        break;
+                    float y = window_pos_y + row * row_size_f;
+                    dl->AddRectFilled(
+                        ImVec2(window_pos_x, y),
+                        ImVec2(window_pos_x + MINIMAP_WIDTH, y + mark_h),
+                        match_col);
+                }
+
+                // Viewport indicator.
+                if ((in.layout.visible_line_last - in.layout.visible_line_first) < line_count)
+                {
+                    const float MIN_VIEWPORT_H = 30.0f;
+                    float vp_h = (in.layout.visible_line_last - in.layout.visible_line_first) * row_size_f;
+                    vp_h = std::max(vp_h, MIN_VIEWPORT_H);
+                    float y = window_pos_y + in.layout.visible_line_first * row_size_f;
+                    float max_y = window_pos_y + window_height_px - vp_h;
+                    y = std::min(y, max_y);
+                    dl->AddRectFilled(
+                        ImVec2(window_pos_x, y),
+                        ImVec2(window_pos_x + MINIMAP_WIDTH, y + vp_h),
+                        ImGui::GetColorU32(ImVec4(0.5f, 0.5f, 0.5f, 0.25f)));
+                }
+
+                // Cursor line — drawn last so it sits on top.
+                if (cursor_row >= 0 && cursor_row < line_count)
+                {
+                    float cy = window_pos_y + cursor_row * row_size_f;
+                    dl->AddRectFilled(
+                        ImVec2(window_pos_x, cy),
+                        ImVec2(window_pos_x + MINIMAP_WIDTH, cy + mark_h),
+                        ImGui::GetColorU32(in.view.color_scope));
                 }
             }
         }
@@ -522,6 +681,7 @@ namespace kestrel
         if (ImGui::Begin("Settings", &in.show_settings, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::SeparatorText("Display");
+            ImGui::Checkbox("Show minimap", &in.view.show_minimap);
             ImGui::Checkbox("Snap scroll to lines", &in.view.snap_scroll);
             ImGui::Checkbox("Show only filtered results", &in.view.display_only_filtered_lines);
             ImGui::Checkbox("Color each regex capture group individually", &in.view.highlight_groups);
@@ -618,6 +778,7 @@ namespace kestrel
         draw_main_menu(in);
         draw_search_bar(in, search);
         draw_results(in, search);
+        draw_minimap(in, search);
         draw_settings_popup(in);
         draw_open_dialog(in);
         draw_goto_line_dialog(in, search);
