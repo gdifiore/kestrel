@@ -119,6 +119,11 @@ add_executable(kestrel
     src/engine/group_matcher.cpp
     src/ui/window.cpp
     src/ui/ui.cpp
+    src/ui/main_menu.cpp
+    src/ui/search_bar.cpp
+    src/ui/results.cpp
+    src/ui/minimap.cpp
+    src/ui/dialogs.cpp
 )
 target_include_directories(kestrel PRIVATE
     include
