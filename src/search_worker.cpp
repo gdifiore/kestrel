@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <utility>
 
 namespace kestrel
 {
@@ -121,16 +122,10 @@ namespace kestrel
 
         try
         {
-            // Reuse scanner if pattern and flags match (avoids expensive recompilation)
-            if (!scanner_ || job.pattern != cached_pattern_ || job.flags != cached_flags_)
-            {
-                scanner_.emplace(job.pattern, job.flags);
-                cached_pattern_ = job.pattern;
-                cached_flags_ = job.flags;
-            }
+            Scanner& scanner = get_or_compile(job.pattern, job.flags);
             auto span = job.source->bytes();
             spdlog::debug("worker scanning pattern '{}' on {} bytes", job.pattern, span.size());
-            matches = scanner_->scan(
+            matches = scanner.scan(
                 std::string_view{span.data(), span.size()}, // Convert span to string_view
                 &generation_, job.generation);
             spdlog::debug("worker found {} matches", matches.size());
@@ -166,8 +161,15 @@ namespace kestrel
         {
             error = e.what();
             spdlog::error("worker scan failed: {}", error);
-            scanner_.reset();        // Clear failed scanner
-            cached_pattern_.clear(); // Clear cache
+            // Drop the offending entry: a compile failure means nothing was cached;
+            // a scan-time failure leaves a working compile we still don't want to
+            // pin (likely transient state on this scratch).
+            auto it = std::find_if(compile_cache_.begin(), compile_cache_.end(),
+                [&](const CompiledEntry& e_) {
+                    return e_.pattern == job.pattern && e_.flags == job.flags;
+                });
+            if (it != compile_cache_.end())
+                compile_cache_.erase(it);
         }
 
         auto t1 = std::chrono::steady_clock::now();
@@ -177,6 +179,26 @@ namespace kestrel
                       job.pattern, job.flags, matches.size(), scan_ms);
 
         search_callback_(std::move(matches), std::move(matched_lines), std::move(error), scan_ms, job.generation);
+    }
+
+    // LRU lookup keyed on (pattern, flags). Hit: splice to front, return.
+    // Miss: compile (may throw ScannerError), push front, evict tail at cap.
+    Scanner& SearchWorker::get_or_compile(const std::string& pattern, unsigned flags)
+    {
+        auto it = std::find_if(compile_cache_.begin(), compile_cache_.end(),
+            [&](const CompiledEntry& e) {
+                return e.pattern == pattern && e.flags == flags;
+            });
+        if (it != compile_cache_.end())
+        {
+            compile_cache_.splice(compile_cache_.begin(), compile_cache_, it);
+            return compile_cache_.front().scanner;
+        }
+
+        compile_cache_.push_front(CompiledEntry{pattern, flags, Scanner(pattern, flags)});
+        if (compile_cache_.size() > COMPILE_CACHE_MAX)
+            compile_cache_.pop_back();
+        return compile_cache_.front().scanner;
     }
 
 } // namespace kestrel

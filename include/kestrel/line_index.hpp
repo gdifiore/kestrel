@@ -23,6 +23,7 @@ namespace kestrel
 
     private:
         void scan_for_newlines(std::span<const char> buf);
+        void scan_for_newlines_parallel(std::span<const char> buf);
 
 #if defined(__x86_64__) || defined(_M_X64)
         void scan_for_newlines_simd(std::span<const char> buf);

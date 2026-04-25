@@ -91,6 +91,61 @@ TEST_CASE("bad regex populates compile_error, leaves matches empty")
     CHECK(sc.matches().empty());
 }
 
+TEST_CASE("prefilter rejects unbalanced paren")
+{
+    TempFile tf("abc\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_pattern("(unclosed", 0);
+    rescan_now(sc);
+    CHECK(sc.compile_error().find("unmatched") != std::string::npos);
+    CHECK(sc.matches().empty());
+}
+
+TEST_CASE("prefilter rejects trailing backslash")
+{
+    TempFile tf("abc\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_pattern("foo\\", 0);
+    rescan_now(sc);
+    CHECK(sc.compile_error().find("trailing") != std::string::npos);
+    CHECK(sc.matches().empty());
+}
+
+TEST_CASE("prefilter accepts escaped class chars")
+{
+    TempFile tf("a1b\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_pattern("[\\d]", 0);
+    rescan_now(sc);
+    CHECK(sc.compile_error().empty());
+    REQUIRE(sc.matches().size() == 1);
+}
+
+TEST_CASE("compile cache reuses scanner across repeated patterns and evicts at cap")
+{
+    // 9 distinct patterns with cache size 8 forces one eviction. Re-running
+    // pattern 0 after eviction should still succeed (recompile path).
+    TempFile tf("abcdefghij\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    const char* pats[] = {"a", "b", "c", "d", "e", "f", "g", "h", "i"};
+    for (const char* p : pats)
+    {
+        sc.set_pattern(p, 0);
+        rescan_now(sc);
+        REQUIRE(sc.compile_error().empty());
+        CHECK(sc.matches().size() == 1);
+    }
+    // Pattern 0 ("a") was evicted; re-running must recompile cleanly.
+    sc.set_pattern("a", 0);
+    rescan_now(sc);
+    CHECK(sc.compile_error().empty());
+    CHECK(sc.matches().size() == 1);
+}
+
 TEST_CASE("clear_source drops source and matches")
 {
     TempFile tf("foo\n");
