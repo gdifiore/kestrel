@@ -239,6 +239,14 @@ namespace kestrel
         w.on_file_drop([&](std::span<const char *> paths)
                        {
         if (!paths.empty()) load_path(paths[0]); });
+        // Repaint synchronously while the user drags the window edge — without
+        // this, X11/Wayland blocks event polling until the drag ends and the
+        // window contents lag/freeze behind the new frame size.
+        w.on_refresh([&]() {
+            w.begin_frame();
+            draw_ui(ui, search);
+            w.end_frame();
+        });
         load_config(ui);
         while (!w.should_close() && !ui.quit_requested)
         {

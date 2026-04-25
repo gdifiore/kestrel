@@ -210,4 +210,25 @@ namespace kestrel
         glfwSetDropCallback(handle_, drop_cb_ ? &drop_trampoline : nullptr);
     }
 
+    void Window::dispatch_refresh()
+    {
+        if (refresh_cb_) {
+            refresh_cb_();
+}
+    }
+
+    static void refresh_trampoline(GLFWwindow *w)
+    {
+        auto *self = static_cast<Window *>(glfwGetWindowUserPointer(w));
+        if (self) {
+            self->dispatch_refresh();
+}
+    }
+
+    void Window::on_refresh(std::function<void()> cb)
+    {
+        refresh_cb_ = std::move(cb);
+        glfwSetWindowRefreshCallback(handle_, refresh_cb_ ? &refresh_trampoline : nullptr);
+    }
+
 } // namespace kestrel
