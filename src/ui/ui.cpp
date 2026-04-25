@@ -397,26 +397,37 @@ namespace kestrel
 
         ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
 
+        auto fill_row_tint = [&](ImVec4 col) {
+            ImVec2 rmin(cursor_pos.x, cursor_pos.y);
+            ImVec2 rmax(cursor_pos.x + ImGui::GetContentRegionAvail().x, cursor_pos.y + line_height);
+            ImGui::GetWindowDrawList()->AddRectFilled(rmin, rmax, ImGui::GetColorU32(col));
+        };
+
         if (in.view.log_level_tint)
         {
             ImVec4 tint = detect_log_level_tint(std::span<const char>(p, end - start));
             if (tint.w > 0.0f)
+                fill_row_tint(tint);
+        }
+
+        if (in.selection.anchor_line)
+        {
+            size_t a = *in.selection.anchor_line;
+            size_t b = in.cursor.line;
+            if (a > b) std::swap(a, b);
+            if ((size_t)line_idx >= a && (size_t)line_idx <= b)
             {
-                ImVec2 lmin(cursor_pos.x, cursor_pos.y);
-                ImVec2 lmax(cursor_pos.x + ImGui::GetContentRegionAvail().x, cursor_pos.y + line_height);
-                ImGui::GetWindowDrawList()->AddRectFilled(lmin, lmax, ImGui::GetColorU32(tint));
+                ImVec4 sel_col = in.view.color_scope;
+                sel_col.w = 0.45f;
+                fill_row_tint(sel_col);
             }
         }
 
-        // Cursor line highlighting
         if (in.cursor.visible && line_idx == static_cast<int>(in.cursor.line))
         {
-            ImVec2 line_min(cursor_pos.x, cursor_pos.y);
-            ImVec2 line_max(cursor_pos.x + ImGui::GetContentRegionAvail().x, cursor_pos.y + line_height);
-            ImVec4 cursor_color_with_alpha = in.view.color_scope;
-            cursor_color_with_alpha.w = 0.3f; // Semi-transparent background
-            ImU32 cursor_color = ImGui::GetColorU32(cursor_color_with_alpha);
-            ImGui::GetWindowDrawList()->AddRectFilled(line_min, line_max, cursor_color);
+            ImVec4 cur_col = in.view.color_scope;
+            cur_col.w = 0.3f;
+            fill_row_tint(cur_col);
         }
 
         std::span matches_in_range = search.matches_in_range(start, end);
@@ -487,9 +498,9 @@ namespace kestrel
 
         ImGui::TextUnformatted(p, p + (end - start));
 
-        // Mouse click to position cursor
         if (ImGui::IsItemClicked())
         {
+            in.selection.extend_or_clear(ImGui::GetIO().KeyShift, in.cursor.line);
             in.cursor.line = static_cast<size_t>(line_idx);
         }
     }
@@ -906,7 +917,9 @@ namespace kestrel
         draw_shortcut_row("↑↓ PgUp/Dn", "Navigate lines");
         draw_shortcut_row("Home/End", "First/last line");
         draw_shortcut_row("Ctrl+G", "Go to line");
-        draw_shortcut_row("Ctrl+C", "Copy search pattern");
+        draw_shortcut_row("Shift+Click", "Extend line selection");
+        draw_shortcut_row("Shift+↑↓/PgUp/Dn", "Extend line selection");
+        draw_shortcut_row("Ctrl+C", "Copy selection (or search pattern)");
         draw_shortcut_row("Ctrl+V", "Paste to search");
 
         ImGui::EndTable();
