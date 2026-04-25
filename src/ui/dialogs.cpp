@@ -27,7 +27,7 @@ namespace kestrel
         {
             return;
         }
-        ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 80.0F);
+        ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 80.0F * ui_scale());
         ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
 
         draw_shortcut_row("Ctrl+F", "Focus search box");
@@ -87,7 +87,8 @@ namespace kestrel
     void draw_open_dialog(UiInputs &in)
     {
         auto *dlg = ImGuiFileDialog::Instance();
-        ImVec2 min_size(600, 400);
+        const float s = ui_scale();
+        ImVec2 min_size(600.0F * s, 400.0F * s);
         if (dlg->Display("kestrel_open", ImGuiWindowFlags_NoCollapse, min_size))
         {
             if (dlg->IsOk())
@@ -108,7 +109,7 @@ namespace kestrel
         if (ImGui::Begin("Go to Line", &in.hotkeys.show_goto_line, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse))
         {
             ImGui::Text("Enter line number:");
-            ImGui::SetNextItemWidth(200.0F);
+            ImGui::SetNextItemWidth(200.0F * ui_scale());
 
             bool enter_pressed = ImGui::InputText("##line", in.hotkeys.goto_line_input, sizeof(in.hotkeys.goto_line_input), ImGuiInputTextFlags_EnterReturnsTrue);
 

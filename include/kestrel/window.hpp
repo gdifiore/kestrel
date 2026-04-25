@@ -30,12 +30,16 @@ namespace kestrel
         void dispatch_drop(int count, const char **paths);
         void on_file_drop(std::function<void(std::span<const char *>)>);
 
+        void dispatch_refresh();
+        void on_refresh(std::function<void()>);
+
     private:
         GLFWwindow *handle_ = nullptr;
 
         ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
         std::function<void(std::span<const char *>)> drop_cb_;
+        std::function<void()> refresh_cb_;
     };
 
     class WindowError : public std::runtime_error

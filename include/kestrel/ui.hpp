@@ -11,7 +11,26 @@
 
 namespace kestrel
 {
+    // Reference font size all hardcoded pixel constants are tuned for.
+    // Window::ctor loads the TTF at BASE_FONT_PX * derive_ui_scale().
+    inline constexpr float BASE_FONT_PX = 15.0F;
+
+    // Base width at BASE_FONT_PX; scale at use sites via ui_scale().
     inline constexpr int MINIMAP_WIDTH = 80; // px
+
+    // Multiplier vs the base font size that the rest of the UI is sized for.
+    // Tracks both the startup DPI scale baked into the font and any runtime
+    // FontGlobalScale zoom, so hardcoded pixel constants stay proportional.
+    inline float ui_scale()
+    {
+        return ImGui::GetFontSize() / BASE_FONT_PX;
+    }
+
+    inline float minimap_width()
+    {
+        return MINIMAP_WIDTH * ui_scale();
+    }
+
     class SearchController;
 
     struct SearchInputs
