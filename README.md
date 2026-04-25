@@ -2,6 +2,21 @@
 
 Interactive regex filter and text file viewer designed for log files.
 
+## Features
+
+- Live regex filter (Hyperscan/Vectorscan) with PCRE2 capture-group highlighting
+- Match counter (X of Y), next/prev match (`n` / `Shift+N`)
+- Filter view: show only matched lines
+- Time-range filter for parsed timestamps (ISO-8601, syslog)
+- Log-level auto-tint (ERROR / WARN / INFO / DEBUG)
+- Synthetic minimap with click-to-jump and viewport indicator
+- Light/dark theme; configurable match/cursor colors
+- Line-range selection: click + Shift+click (or Shift+arrows / PgUp / PgDn) → `Ctrl+C` to copy
+- Go-to-line (`Ctrl+G`), copy/paste search pattern (`Ctrl+C` / `Ctrl+V`)
+- Recent-files list, drag-and-drop file open
+
+In-app help: `Help → Keyboard Shortcuts`.
+
 ## System dependencies
 
 Debian / Ubuntu / Mint:
@@ -30,7 +45,7 @@ Third-party sources live under `third_party/`:
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j4
+cmake --build build -j
 ```
 
 ## Run

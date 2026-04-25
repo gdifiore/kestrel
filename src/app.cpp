@@ -26,6 +26,19 @@ namespace kestrel
         size_t max_line = lines.line_count() - 1;
 
         auto &cur = ui.cursor;
+        const ImGuiIO &io = ImGui::GetIO();
+
+        bool nav_pressed =
+            ImGui::IsKeyPressed(ImGuiKey_UpArrow) ||
+            ImGui::IsKeyPressed(ImGuiKey_DownArrow) ||
+            ImGui::IsKeyPressed(ImGuiKey_Home) ||
+            ImGui::IsKeyPressed(ImGuiKey_End) ||
+            ImGui::IsKeyPressed(ImGuiKey_PageUp) ||
+            ImGui::IsKeyPressed(ImGuiKey_PageDown);
+
+        if (nav_pressed)
+            ui.selection.extend_or_clear(io.KeyShift, cur.line);
+
         if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
             cur.line = (cur.line > 0) ? cur.line - 1 : 0;
         if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
@@ -73,10 +86,33 @@ namespace kestrel
             ui.hotkeys.show_goto_line = true;
         }
 
-        // Ctrl+C - Copy current search pattern (when no input widget is focused)
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C) && !ImGui::IsAnyItemActive())
         {
-            ImGui::SetClipboardText(ui.search.query);
+            if (ui.selection.anchor_line && search.has_source())
+            {
+                const auto &lines = search.line_index();
+                const auto bytes = search.source_bytes();
+                const size_t total = lines.line_count();
+                size_t a = *ui.selection.anchor_line;
+                size_t b = ui.cursor.line;
+                if (a > b) std::swap(a, b);
+                if (b >= total) b = total - 1;
+
+                std::string out;
+                size_t lo = lines.line_start(a);
+                size_t hi = (b + 1 < total) ? lines.line_start(b + 1) : bytes.size();
+                if (hi > lo)
+                {
+                    out.assign(bytes.data() + lo, bytes.data() + hi);
+                    while (!out.empty() && (out.back() == '\n' || out.back() == '\r'))
+                        out.pop_back();
+                }
+                ImGui::SetClipboardText(out.c_str());
+            }
+            else
+            {
+                ImGui::SetClipboardText(ui.search.query);
+            }
         }
 
         // Ctrl+V - Paste to search pattern (when no input widget is focused)

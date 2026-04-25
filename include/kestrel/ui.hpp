@@ -56,6 +56,21 @@ namespace kestrel
         bool visible = true;
     };
 
+    // Line-range selection. When set, selection covers
+    // [min(anchor,cursor), max(anchor,cursor)] inclusive.
+    struct SelectionState
+    {
+        std::optional<size_t> anchor_line;
+
+        void extend_or_clear(bool shift, size_t cur_line)
+        {
+            if (!shift)
+                anchor_line.reset();
+            else if (!anchor_line)
+                anchor_line = cur_line;
+        }
+    };
+
     // Persistent (saved to config).
     struct FilePrefs
     {
@@ -141,6 +156,7 @@ namespace kestrel
         SearchInputs search;
         ViewPrefs view;
         CursorState cursor;
+        SelectionState selection;
         FilePrefs file_prefs;
         FileLoadState file_load;
         HotkeyTriggers hotkeys;
