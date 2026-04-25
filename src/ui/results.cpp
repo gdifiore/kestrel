@@ -615,7 +615,7 @@ namespace kestrel
         ImGuiViewport *vp = ImGui::GetMainViewport();
         const float top_h = in.layout.search_bar_h + in.layout.toolbar_h;
         const float window_pos_y = vp->WorkPos.y + top_h;
-        const float results_w = vp->WorkSize.x - (in.view.show_minimap ? MINIMAP_WIDTH : 0);
+        const float results_w = vp->WorkSize.x - (in.view.show_minimap ? minimap_width() : 0.0F);
 
         ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, window_pos_y));
         ImGui::SetNextWindowSize(ImVec2(results_w, vp->WorkSize.y - top_h - in.layout.status_bar_h));

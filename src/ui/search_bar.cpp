@@ -123,7 +123,8 @@ namespace kestrel
         }
         // Needs ~500px for checkbox + two 200px sliders. Skip if remaining
         // toolbar width can't hold them, so widgets don't wrap/overflow.
-        if (ImGui::GetContentRegionAvail().x < 500.0F)
+        const float s = ui_scale();
+        if (ImGui::GetContentRegionAvail().x < 500.0F * s)
         {
             return;
         }
@@ -156,11 +157,11 @@ namespace kestrel
         int64_t lo = ts.min_ts();
         int64_t hi = ts.max_ts();
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(200.0F);
+        ImGui::SetNextItemWidth(200.0F * s);
         ImGui::SliderScalar("##ts_start", ImGuiDataType_S64,
                             &tf.start, &lo, &tf.end, sbuf);
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(200.0F);
+        ImGui::SetNextItemWidth(200.0F * s);
         ImGui::SliderScalar("##ts_end", ImGuiDataType_S64,
                             &tf.end, &tf.start, &hi, ebuf);
     }

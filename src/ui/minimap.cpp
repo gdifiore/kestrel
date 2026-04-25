@@ -19,6 +19,7 @@ namespace kestrel
             float pos_x;
             float pos_y;
             int height_px;
+            float width_px;
         };
 
         struct MinimapLineSpace
@@ -34,10 +35,12 @@ namespace kestrel
         {
             ImGuiViewport *vp = ImGui::GetMainViewport();
             const float top_h = in.layout.search_bar_h + in.layout.toolbar_h;
+            const float w = minimap_width();
             return {
-                vp->WorkPos.x + vp->WorkSize.x - MINIMAP_WIDTH,
+                vp->WorkPos.x + vp->WorkSize.x - w,
                 vp->WorkPos.y + top_h,
                 static_cast<int>(vp->WorkSize.y - top_h - in.layout.status_bar_h),
+                w,
             };
         }
 
@@ -151,7 +154,7 @@ namespace kestrel
                 float y = geo.pos_y + row * row_size;
                 dl->AddRectFilled(
                     ImVec2(geo.pos_x, y),
-                    ImVec2(geo.pos_x + MINIMAP_WIDTH, y + mark_h),
+                    ImVec2(geo.pos_x + geo.width_px, y + mark_h),
                     match_col);
             }
         }
@@ -171,7 +174,7 @@ namespace kestrel
             y = std::min(y, max_y);
             dl->AddRectFilled(
                 ImVec2(geo.pos_x, y),
-                ImVec2(geo.pos_x + MINIMAP_WIDTH, y + vp_h),
+                ImVec2(geo.pos_x + geo.width_px, y + vp_h),
                 ImGui::GetColorU32(ImVec4(0.5F, 0.5F, 0.5F, 0.25F)));
         }
 
@@ -185,7 +188,7 @@ namespace kestrel
             float cy = geo.pos_y + cursor_row * row_size;
             dl->AddRectFilled(
                 ImVec2(geo.pos_x, cy),
-                ImVec2(geo.pos_x + MINIMAP_WIDTH, cy + mark_h),
+                ImVec2(geo.pos_x + geo.width_px, cy + mark_h),
                 ImGui::GetColorU32(in.view.color_scope));
         }
 
@@ -196,12 +199,12 @@ namespace kestrel
 
             dl->AddRectFilled(
                 ImVec2(geo.pos_x, geo.pos_y),
-                ImVec2(geo.pos_x + MINIMAP_WIDTH, geo.pos_y + geo.height_px),
+                ImVec2(geo.pos_x + geo.width_px, geo.pos_y + geo.height_px),
                 ImGui::GetColorU32(ImVec4(0.0F, 0.0F, 0.0F, 0.15F)));
 
             ImVec2 btn_min = ImGui::GetCursorScreenPos();
             ImGui::InvisibleButton("##minimap_hit",
-                                   ImVec2(MINIMAP_WIDTH, static_cast<float>(geo.height_px)));
+                                   ImVec2(geo.width_px, static_cast<float>(geo.height_px)));
             handle_wheel_scroll();
 
             if (space.line_count <= 0)
@@ -241,7 +244,7 @@ namespace kestrel
         const int cursor_row = source_to_display_row(in, space.orig_matches, space.filtered, in.cursor.line);
 
         ImGui::SetNextWindowPos(ImVec2(geo.pos_x, geo.pos_y));
-        ImGui::SetNextWindowSize(ImVec2(MINIMAP_WIDTH, static_cast<float>(geo.height_px)));
+        ImGui::SetNextWindowSize(ImVec2(geo.width_px, static_cast<float>(geo.height_px)));
 
         const ImGuiWindowFlags flags =
             ImGuiWindowFlags_NoDecoration |
