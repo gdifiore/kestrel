@@ -16,7 +16,7 @@ namespace kestrel
     {
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
-        ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "%s", key);
+        ImGui::TextColored(ImVec4(0.7F, 0.7F, 1.0F, 1.0F), "%s", key);
         ImGui::TableNextColumn();
         ImGui::TextUnformatted(action);
     }
@@ -24,8 +24,10 @@ namespace kestrel
     static void draw_shortcuts_table()
     {
         if (!ImGui::BeginTable("shortcuts", 2, ImGuiTableFlags_SizingFixedFit))
+        {
             return;
-        ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        }
+        ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 80.0F);
         ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
 
         draw_shortcut_row("Ctrl+F", "Focus search box");
@@ -49,7 +51,9 @@ namespace kestrel
     void draw_settings_popup(UiInputs &in)
     {
         if (!in.show_settings)
+        {
             return;
+        }
         if (ImGui::Begin("Settings", &in.show_settings, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::SeparatorText("Display");
@@ -64,11 +68,15 @@ namespace kestrel
 
             ImGui::Checkbox("Dot matches newlines", &in.search.dotall);
             if (ImGui::IsItemHovered())
+            {
                 ImGui::SetTooltip("Make . (dot) match newline characters\nPattern 'foo.*bar' can match across lines");
+            }
 
             ImGui::Checkbox("Multiline anchors", &in.search.multiline);
             if (ImGui::IsItemHovered())
+            {
                 ImGui::SetTooltip("Make ^ and $ match line boundaries\n^ = start of line, $ = end of line");
+            }
 
             ImGui::SeparatorText("Keyboard Shortcuts");
             draw_shortcuts_table();
@@ -93,12 +101,14 @@ namespace kestrel
     void draw_goto_line_dialog(UiInputs &in, const SearchController &search)
     {
         if (!in.hotkeys.show_goto_line)
+        {
             return;
+        }
 
         if (ImGui::Begin("Go to Line", &in.hotkeys.show_goto_line, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse))
         {
             ImGui::Text("Enter line number:");
-            ImGui::SetNextItemWidth(200.0f);
+            ImGui::SetNextItemWidth(200.0F);
 
             bool enter_pressed = ImGui::InputText("##line", in.hotkeys.goto_line_input, sizeof(in.hotkeys.goto_line_input), ImGuiInputTextFlags_EnterReturnsTrue);
 
