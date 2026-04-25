@@ -123,6 +123,7 @@ add_executable(kestrel
     src/ui/search_bar.cpp
     src/ui/results.cpp
     src/ui/minimap.cpp
+    src/ui/status_bar.cpp
     src/ui/dialogs.cpp
 )
 target_include_directories(kestrel PRIVATE

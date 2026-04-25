@@ -618,7 +618,7 @@ namespace kestrel
         const float results_w = vp->WorkSize.x - (in.view.show_minimap ? MINIMAP_WIDTH : 0);
 
         ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, window_pos_y));
-        ImGui::SetNextWindowSize(ImVec2(results_w, vp->WorkSize.y - top_h));
+        ImGui::SetNextWindowSize(ImVec2(results_w, vp->WorkSize.y - top_h - in.layout.status_bar_h));
 
         // NoDecoration would strip the scrollbar too — spell out the flags we want.
         const ImGuiWindowFlags flags =

@@ -25,6 +25,7 @@ namespace kestrel
         bool should_close() const;
         void begin_frame();
         void end_frame();
+        void set_title(std::string_view title);
 
         void dispatch_drop(int count, const char **paths);
         void on_file_drop(std::function<void(std::span<const char *>)>);

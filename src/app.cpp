@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 
 namespace kestrel
@@ -288,6 +289,9 @@ namespace kestrel
                     // Successfully loaded - add to recent files
                     add_recent_file(ui, ui.file_load.loading_path);
                     ui.file_load.loading_error.clear();
+                    ui.file_load.current_path = ui.file_load.loading_path;
+                    std::string fname = std::filesystem::path(ui.file_load.current_path).filename().string();
+                    w.set_title("kestrel \xE2\x80\x94 " + fname);
                 }
             }
 
