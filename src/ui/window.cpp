@@ -16,8 +16,9 @@ namespace kestrel
 
     Window::Window(std::string_view title, int width, int height)
     {
-        if (!glfwInit())
+        if (!glfwInit()) {
             throw WindowError("glfwInit failed");
+}
 
         try
         {
@@ -59,7 +60,7 @@ namespace kestrel
 
 #ifdef KESTREL_FONT_REGULAR
             ImGuiIO &io = ImGui::GetIO();
-            io.Fonts->AddFontFromFileTTF(KESTREL_FONT_REGULAR, 15.0f * main_scale);
+            io.Fonts->AddFontFromFileTTF(KESTREL_FONT_REGULAR, 15.0F * main_scale);
 #endif
 
             // configurable later
@@ -73,8 +74,9 @@ namespace kestrel
         }
         catch (...)
         {
-            if (handle_)
+            if (handle_) {
                 glfwDestroyWindow(handle_);
+}
             glfwTerminate();
             throw;
         }
@@ -123,15 +125,17 @@ namespace kestrel
 
     void Window::dispatch_drop(int count, const char **paths)
     {
-        if (drop_cb_)
+        if (drop_cb_) {
             drop_cb_(std::span<const char *>{paths, static_cast<size_t>(count)});
+}
     }
 
     static void drop_trampoline(GLFWwindow *w, int count, const char **paths)
     {
         auto *self = static_cast<Window *>(glfwGetWindowUserPointer(w));
-        if (self)
+        if (self) {
             self->dispatch_drop(count, paths);
+}
     }
 
     void Window::on_file_drop(std::function<void(std::span<const char *>)> cb)

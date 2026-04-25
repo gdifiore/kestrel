@@ -25,39 +25,53 @@ namespace kestrel
         const bool esc_pressed = ImGui::IsKeyPressed(ImGuiKey_Escape);
         char query_backup[IM_ARRAYSIZE(in.search.query)];
         if (esc_pressed)
+        {
             std::memcpy(query_backup, in.search.query, sizeof(in.search.query));
+        }
 
         ImGui::InputTextWithHint("##query", "search...", in.search.query, IM_ARRAYSIZE(in.search.query));
 
         if (esc_pressed && ImGui::IsItemDeactivated())
+        {
             std::memcpy(in.search.query, query_backup, sizeof(in.search.query));
+        }
     }
 
     static void draw_toolbar(UiInputs &in, const SearchController &search)
     {
         ImGui::Checkbox("Aa", &in.search.case_sensitive);
         if (ImGui::IsItemHovered())
+        {
             ImGui::SetTooltip("Case sensitive");
+        }
 
         ImGui::SameLine();
         ImGui::Checkbox(".*", &in.search.dotall);
         if (ImGui::IsItemHovered())
+        {
             ImGui::SetTooltip("Dot matches newlines\n(. matches \\n and all characters)");
+        }
 
         ImGui::SameLine();
         ImGui::Checkbox("^$", &in.search.multiline);
         if (ImGui::IsItemHovered())
+        {
             ImGui::SetTooltip("Multiline anchors\n(^ and $ match line boundaries)");
+        }
 
         ImGui::SameLine();
         ImGui::Text("%d before", in.layout.matches_before);
         if (ImGui::IsItemHovered())
+        {
             ImGui::SetTooltip("Matches before cursor");
+        }
 
         ImGui::SameLine();
         ImGui::Text("%d after", in.layout.matches_after);
         if (ImGui::IsItemHovered())
+        {
             ImGui::SetTooltip("Matches after cursor");
+        }
 
         ImGui::SameLine();
         ImGui::TextDisabled("|");
@@ -81,7 +95,7 @@ namespace kestrel
 
         if (!search.compile_error().empty())
         {
-            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", search.compile_error().c_str());
+            ImGui::TextColored(ImVec4(1.0F, 0.35F, 0.35F, 1.0F), "%s", search.compile_error().c_str());
         }
     }
 
@@ -91,20 +105,28 @@ namespace kestrel
         struct tm g;
         gmtime_r(&t, &g);
         if (include_date)
+        {
             strftime(out, cap, "%Y-%m-%d %H:%M:%S", &g);
+        }
         else
+        {
             strftime(out, cap, "%H:%M:%S", &g);
+        }
     }
 
     static void draw_time_range(UiInputs &in, const SearchController &search)
     {
         const TimestampIndex &ts = search.timestamp_index();
         if (ts.empty())
+        {
             return;
+        }
         // Needs ~500px for checkbox + two 200px sliders. Skip if remaining
         // toolbar width can't hold them, so widgets don't wrap/overflow.
-        if (ImGui::GetContentRegionAvail().x < 500.0f)
+        if (ImGui::GetContentRegionAvail().x < 500.0F)
+        {
             return;
+        }
 
         auto &tf = in.layout.filters.time;
 
@@ -122,7 +144,9 @@ namespace kestrel
         ImGui::SameLine();
         ImGui::Checkbox("time", &tf.active);
         if (!tf.active)
+        {
             return;
+        }
 
         const bool span_multiday = (ts.max_ts() - ts.min_ts()) >= 24 * 3600;
         char sbuf[32], ebuf[32];
@@ -132,11 +156,11 @@ namespace kestrel
         int64_t lo = ts.min_ts();
         int64_t hi = ts.max_ts();
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(200.0f);
+        ImGui::SetNextItemWidth(200.0F);
         ImGui::SliderScalar("##ts_start", ImGuiDataType_S64,
                             &tf.start, &lo, &tf.end, sbuf);
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(200.0f);
+        ImGui::SetNextItemWidth(200.0F);
         ImGui::SliderScalar("##ts_end", ImGuiDataType_S64,
                             &tf.end, &tf.start, &hi, ebuf);
     }
@@ -156,14 +180,18 @@ namespace kestrel
 
         if (ImGui::Begin("##search_bar", nullptr, flags))
         {
-            const float gear_w = ImGui::CalcTextSize(" * ").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            const float gear_w = ImGui::CalcTextSize(" * ").x + ImGui::GetStyle().FramePadding.x * 2.0F;
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - gear_w - ImGui::GetStyle().ItemSpacing.x);
             draw_query_input(in);
             ImGui::SameLine();
             if (ImGui::Button(" * "))
+            {
                 in.show_settings = !in.show_settings;
+            }
             if (ImGui::IsItemHovered())
+            {
                 ImGui::SetTooltip("Settings");
+            }
             in.layout.search_bar_h = ImGui::GetWindowHeight();
         }
         ImGui::End();
