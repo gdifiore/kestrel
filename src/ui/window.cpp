@@ -123,6 +123,11 @@ namespace kestrel
         glfwSwapBuffers(handle_);
     }
 
+    void Window::set_title(std::string_view title)
+    {
+        glfwSetWindowTitle(handle_, std::string(title).c_str());
+    }
+
     void Window::dispatch_drop(int count, const char **paths)
     {
         if (drop_cb_) {

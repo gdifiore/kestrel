@@ -84,6 +84,8 @@ namespace kestrel
         std::string loading_path;
         std::string loading_error;
         std::optional<std::string> pending_open;
+        // Path of currently loaded file (set on successful load).
+        std::string current_path;
     };
 
     struct HotkeyTriggers
@@ -117,6 +119,7 @@ namespace kestrel
     {
         float search_bar_h = 0.0f;
         float toolbar_h = 0.0f;
+        float status_bar_h = 0.0f;
         ViewFilters filters;
         int matches_before = 0;
         int matches_after = 0;

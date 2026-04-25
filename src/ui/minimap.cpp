@@ -37,7 +37,7 @@ namespace kestrel
             return {
                 vp->WorkPos.x + vp->WorkSize.x - MINIMAP_WIDTH,
                 vp->WorkPos.y + top_h,
-                static_cast<int>(vp->WorkSize.y - top_h),
+                static_cast<int>(vp->WorkSize.y - top_h - in.layout.status_bar_h),
             };
         }
 

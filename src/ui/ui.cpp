@@ -10,6 +10,7 @@ namespace kestrel
         draw_toolbar_row(in, search);
         draw_search_bar(in, search);
         update_view_cache(in, search);
+        draw_status_bar(in, search);
         draw_results(in, search);
         draw_minimap(in, search);
         draw_settings_popup(in);
