@@ -7,6 +7,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <functional>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -88,10 +89,19 @@ namespace kestrel
         bool job_pending_ = false;
         std::optional<Job> pending_job_;
 
-        // Worker thread state (accessed only by worker thread)
-        std::optional<Scanner> scanner_;
-        std::string cached_pattern_;
-        unsigned cached_flags_ = 0;
+        // Worker thread state (accessed only by worker thread).
+        // LRU of compiled patterns: front = most recently used. Bounded so
+        // stale patterns don't pin Hyperscan database memory indefinitely.
+        struct CompiledEntry
+        {
+            std::string pattern;
+            unsigned flags;
+            Scanner scanner;
+        };
+        static constexpr std::size_t COMPILE_CACHE_MAX = 8;
+        std::list<CompiledEntry> compile_cache_;
+
+        Scanner& get_or_compile(const std::string& pattern, unsigned flags);
     };
 
 } // namespace kestrel

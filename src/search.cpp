@@ -9,6 +9,48 @@
 namespace kestrel
 {
 
+    namespace {
+        // Catch the common mid-typing regex errors (unmatched '(' or '[',
+        // trailing '\') before paying the ~227µs hs_compile + worker round-trip.
+        // Returns empty string when the pattern looks syntactically plausible;
+        // otherwise a short user-visible reason.
+        std::string quick_regex_validate(std::string_view pat)
+        {
+            int paren = 0;
+            bool in_class = false;
+            bool class_first = false; // ']' is literal at start of class
+            for (std::size_t i = 0; i < pat.size(); ++i)
+            {
+                char c = pat[i];
+                if (c == '\\')
+                {
+                    if (i + 1 == pat.size()) return "trailing '\\'";
+                    ++i;
+                    if (in_class) class_first = false; // escaped char consumed first class slot
+                    continue;
+                }
+                if (in_class)
+                {
+                    if (c == ']' && !class_first) in_class = false;
+                    class_first = false;
+                }
+                else if (c == '[')
+                {
+                    in_class = true;
+                    class_first = true;
+                }
+                else if (c == '(') ++paren;
+                else if (c == ')')
+                {
+                    if (--paren < 0) return "unmatched ')'";
+                }
+            }
+            if (in_class) return "unterminated '['";
+            if (paren > 0) return "unmatched '('";
+            return {};
+        }
+    }
+
     SearchController::SearchController()
     {
         worker_ = std::make_unique<SearchWorker>(
@@ -161,6 +203,14 @@ namespace kestrel
                 prefix_max_end_.clear();
                 matched_lines_.clear();
                 compile_error_.clear();
+                last_scan_ms_ = 0.0;
+            }
+            else if (std::string reason = quick_regex_validate(pattern_); !reason.empty())
+            {
+                matches_.clear();
+                prefix_max_end_.clear();
+                matched_lines_.clear();
+                compile_error_ = "regex syntax: " + reason;
                 last_scan_ms_ = 0.0;
             }
             else
