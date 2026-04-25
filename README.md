@@ -1,6 +1,6 @@
 # Kestrel
 
-Fast regex filter UI for logs.
+Interactive regex filter and text file viewer designed for log files.
 
 ## System dependencies
 
