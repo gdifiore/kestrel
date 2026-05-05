@@ -2,6 +2,8 @@
 
 Interactive regex filter and text file viewer designed for log files.
 
+![demo](repo/demo.gif)
+
 ## Features
 
 - Live regex filter (Hyperscan/Vectorscan) with PCRE2 capture-group highlighting
