@@ -97,20 +97,31 @@ namespace kestrel
             glfwSetWindowSize(handle_, scaled_w, scaled_h);
             glfwShowWindow(handle_);
 
-            const char* icon_path = "assets/kestrel-icon-16.png";
-            if (std::filesystem::exists(icon_path))
+            const char* icon_paths[] = {
+                "assets/kestrel-16.png",
+                "assets/kestrel-32.png",
+                "assets/kestrel-48.png",
+            };
+            constexpr size_t icon_count = sizeof(icon_paths) / sizeof(icon_paths[0]);
+            GLFWimage icons[icon_count];
+            unsigned char* icon_pixels[icon_count] = {};
+            int loaded = 0;
+            for (size_t i = 0; i < icon_count; ++i)
             {
-                int width, height, channels;
-                unsigned char* pixels = stbi_load(icon_path, &width, &height, &channels, 4); // Force RGBA
-                if (pixels)
-                {
-                    GLFWimage icon;
-                    icon.width = width;
-                    icon.height = height;
-                    icon.pixels = pixels;
-                    glfwSetWindowIcon(handle_, 1, &icon);
-                    stbi_image_free(pixels);
-                }
+                if (!std::filesystem::exists(icon_paths[i])) continue;
+                int w, h, channels;
+                unsigned char* pixels = stbi_load(icon_paths[i], &w, &h, &channels, 4);
+                if (!pixels) continue;
+                icon_pixels[loaded] = pixels;
+                icons[loaded].width = w;
+                icons[loaded].height = h;
+                icons[loaded].pixels = pixels;
+                ++loaded;
+            }
+            if (loaded > 0)
+            {
+                glfwSetWindowIcon(handle_, loaded, icons);
+                for (int i = 0; i < loaded; ++i) stbi_image_free(icon_pixels[i]);
             }
 
             glfwSetWindowSizeLimits(handle_, scaled_w, scaled_h, GLFW_DONT_CARE, GLFW_DONT_CARE);

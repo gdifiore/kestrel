@@ -1,4 +1,4 @@
-# Kestrel
+# ![icon](assets/kestrel-32.png) Kestrel
 
 Interactive regex filter and text file viewer designed for log files.
 
@@ -47,7 +47,7 @@ Third-party sources live under `third_party/`:
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake --build build -j4
 ```
 
 ## Run
@@ -71,3 +71,6 @@ KESTREL_LOG=debug ./build/kestrel 2> kestrel.log
 ```
 
 Valid `KESTREL_LOG` values: `trace`, `debug`, `info` (default), `warn`, `err`, `off`.
+
+##### Icon Credit (modified by me)
+<a href="https://www.flaticon.com/free-icons/american-kestrel-bird" title="american kestrel bird icons">American kestrel bird icons created by Delwar018 - Flaticon</a>

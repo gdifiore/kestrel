@@ -16,3 +16,4 @@ CMakeUserPresets.json
 poc/**
 docs/**
 buildandrun.sh
+*.xcf
