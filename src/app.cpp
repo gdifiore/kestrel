@@ -24,7 +24,9 @@ namespace kestrel
             return;
 
         const auto &lines = search.line_index();
-        size_t max_line = lines.line_count() - 1;
+        const size_t total_lines = lines.line_count();
+        if (total_lines == 0)
+            return;
 
         auto &cur = ui.cursor;
         const ImGuiIO &io = ImGui::GetIO();
@@ -40,26 +42,70 @@ namespace kestrel
         if (nav_pressed)
             ui.selection.extend_or_clear(io.KeyShift, cur.line);
 
-        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
-            cur.line = (cur.line > 0) ? cur.line - 1 : 0;
-        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
-            cur.line = std::min(cur.line + 1, max_line);
-        if (ImGui::IsKeyPressed(ImGuiKey_Home))
-            cur.line = 0;
-        if (ImGui::IsKeyPressed(ImGuiKey_End))
-            cur.line = max_line - 1;
+        // Step in display-row space, not source-line space. In filter / custom
+        // view, source-line stepping lands the cursor on hidden lines: the
+        // counts shift but the view stays put.
+        const auto &matched = search.matched_lines();
+        const bool filter_view = ui.view.display_only_filtered_lines && !search.pattern_empty();
+        const bool use_custom = ui.layout.view_has_custom;
+        const auto &view_lines = ui.layout.view_lines;
 
-        // Rough estimate of visible lines for Page Up/Down
-        float line_height = ImGui::GetTextLineHeightWithSpacing();
-        float viewport_height = ImGui::GetMainViewport()->WorkSize.y;
-        int visible_lines = std::max(10, (int)((viewport_height * 0.6f) / line_height));
+        const int row_count =
+            use_custom   ? static_cast<int>(view_lines.size())
+            : filter_view ? static_cast<int>(matched.size())
+                          : static_cast<int>(total_lines);
 
-        if (ImGui::IsKeyPressed(ImGuiKey_PageUp))
-            cur.line = std::max((int)cur.line - visible_lines, 0);
-        if (ImGui::IsKeyPressed(ImGuiKey_PageDown))
-            cur.line = std::min(cur.line + visible_lines, max_line);
+        if (row_count > 0)
+        {
+            const int max_row = row_count - 1;
 
-        // Update offset + match counts
+            auto row_to_source = [&](int r) -> size_t {
+                r = std::clamp(r, 0, max_row);
+                if (use_custom) return view_lines[r];
+                if (filter_view) return matched[r];
+                return static_cast<size_t>(r);
+            };
+            auto source_to_row = [&](size_t s) -> int {
+                if (use_custom)
+                {
+                    auto it = std::lower_bound(view_lines.begin(), view_lines.end(), s);
+                    return static_cast<int>(it - view_lines.begin());
+                }
+                if (filter_view)
+                {
+                    auto it = std::lower_bound(matched.begin(), matched.end(), s);
+                    return static_cast<int>(it - matched.begin());
+                }
+                return static_cast<int>(s);
+            };
+
+            int cur_row = std::clamp(source_to_row(cur.line), 0, max_row);
+
+            // Page step = real results-pane height in rows, minus 1 row for
+            // overlap context. Subtract chrome (search bar + toolbar + status
+            // bar) from main viewport so PgDn doesn't overshoot the viewport.
+            float line_height = ImGui::GetTextLineHeightWithSpacing();
+            float vp_h = ImGui::GetMainViewport()->WorkSize.y;
+            float chrome = ui.layout.search_bar_h + ui.layout.toolbar_h + ui.layout.status_bar_h;
+            float results_h = std::max(line_height, vp_h - chrome);
+            int page_step = std::max(1, static_cast<int>(results_h / line_height) - 1);
+
+            if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
+                cur_row = std::max(cur_row - 1, 0);
+            if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
+                cur_row = std::min(cur_row + 1, max_row);
+            if (ImGui::IsKeyPressed(ImGuiKey_Home))
+                cur_row = 0;
+            if (ImGui::IsKeyPressed(ImGuiKey_End))
+                cur_row = max_row;
+            if (ImGui::IsKeyPressed(ImGuiKey_PageUp))
+                cur_row = std::max(cur_row - page_step, 0);
+            if (ImGui::IsKeyPressed(ImGuiKey_PageDown))
+                cur_row = std::min(cur_row + page_step, max_row);
+
+            cur.line = row_to_source(cur_row);
+        }
+
         cur.offset = lines.line_start(cur.line);
         ui.layout.matches_before = search.matches_before(cur.offset);
         ui.layout.matches_after = search.matches_after(cur.offset);
