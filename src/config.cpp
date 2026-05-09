@@ -174,7 +174,7 @@ namespace kestrel
     void add_recent_file(UiInputs &ui, const std::string &path)
     {
         auto &recent = ui.file_prefs.recent_files;
-        recent.erase(std::remove(recent.begin(), recent.end(), path), recent.end());
+        std::erase(recent, path);
         recent.insert(recent.begin(), path);
         if (recent.size() > 10)
         {
@@ -184,14 +184,9 @@ namespace kestrel
 
     void cleanup_recent_files(UiInputs &ui)
     {
-        auto &recent = ui.file_prefs.recent_files;
-        recent.erase(
-            std::remove_if(recent.begin(), recent.end(),
-                           [](const std::string &path)
-                           {
-                               return !std::filesystem::exists(path);
-                           }),
-            recent.end());
+        std::erase_if(ui.file_prefs.recent_files,
+                      [](const std::string &path)
+                      { return !std::filesystem::exists(path); });
     }
 
 } // namespace kestrel

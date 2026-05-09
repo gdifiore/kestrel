@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <vector>
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -22,15 +21,6 @@ namespace kestrel
             float width_px;
         };
 
-        struct MinimapLineSpace
-        {
-            const std::vector<size_t> &orig_matches;
-            const std::vector<size_t> &view_lines;
-            bool filtered;
-            bool use_custom_view;
-            int line_count;
-        };
-
         MinimapGeometry compute_geometry(const UiInputs &in)
         {
             ImGuiViewport *vp = ImGui::GetMainViewport();
@@ -42,19 +32,6 @@ namespace kestrel
                 static_cast<int>(vp->WorkSize.y - top_h - in.layout.status_bar_h),
                 w,
             };
-        }
-
-        int compute_line_count(const MinimapLineSpace &space, const SearchController &search)
-        {
-            if (space.use_custom_view)
-            {
-                return static_cast<int>(space.view_lines.size());
-            }
-            if (space.filtered)
-            {
-                return static_cast<int>(space.orig_matches.size());
-            }
-            return static_cast<int>(search.line_index().line_count());
         }
 
         void handle_wheel_scroll()
@@ -72,26 +49,14 @@ namespace kestrel
             ImGui::SetScrollY(w, w->Scroll.y - ImGui::GetIO().MouseWheel * line_h * 3.0F);
         }
 
-        size_t target_to_source_line(const MinimapLineSpace &space, int target)
-        {
-            if (space.use_custom_view)
-            {
-                return space.view_lines[target];
-            }
-            if (space.filtered)
-            {
-                return space.orig_matches[target];
-            }
-            return static_cast<size_t>(target);
-        }
-
-        void handle_drag_and_tooltip(UiInputs &in, const MinimapLineSpace &space,
+        void handle_drag_and_tooltip(UiInputs &in, const ViewIndex &view,
                                      const ImVec2 &btn_min, int height_px)
         {
+            const int row_count = view.row_count();
             float mouse_y = ImGui::GetIO().MousePos.y - btn_min.y;
-            int target = static_cast<int>((mouse_y / static_cast<float>(height_px)) * space.line_count);
-            target = std::clamp(target, 0, space.line_count - 1);
-            const size_t src_line = target_to_source_line(space, target);
+            int target = static_cast<int>((mouse_y / static_cast<float>(height_px)) * row_count);
+            target = std::clamp(target, 0, row_count - 1);
+            const size_t src_line = view.row_to_source(target);
 
             if (ImGui::IsItemActive())
             {
@@ -120,34 +85,20 @@ namespace kestrel
             return ratio;
         }
 
-        int match_to_row(const MinimapLineSpace &space, size_t k)
-        {
-            if (space.use_custom_view)
-            {
-                auto it = std::lower_bound(space.view_lines.begin(), space.view_lines.end(),
-                                           space.orig_matches[k]);
-                if (it == space.view_lines.end() || *it != space.orig_matches[k])
-                {
-                    return -1;
-                }
-                return static_cast<int>(it - space.view_lines.begin());
-            }
-            return space.filtered ? static_cast<int>(k) : static_cast<int>(space.orig_matches[k]);
-        }
-
-        void draw_match_marks(ImDrawList *dl, const UiInputs &in, const MinimapLineSpace &space,
+        void draw_match_marks(ImDrawList *dl, const UiInputs &in, const ViewIndex &view,
                               const MinimapGeometry &geo, float row_size, float mark_h)
         {
+            const int row_count = view.row_count();
             ImU32 match_col = ImGui::GetColorU32(ImVec4(
                 in.view.color_match.x, in.view.color_match.y, in.view.color_match.z, 0.6F));
-            for (size_t k = 0; k < space.orig_matches.size(); k++)
+            for (size_t src : view.matched)
             {
-                int row = match_to_row(space, k);
+                int row = view.source_to_row(src);
                 if (row < 0)
                 {
                     continue;
                 }
-                if (row >= space.line_count)
+                if (row >= row_count)
                 {
                     break;
                 }
@@ -192,7 +143,7 @@ namespace kestrel
                 ImGui::GetColorU32(in.view.color_scope));
         }
 
-        void draw_minimap_contents(UiInputs &in, const MinimapLineSpace &space,
+        void draw_minimap_contents(UiInputs &in, const ViewIndex &view,
                                    const MinimapGeometry &geo, int cursor_row)
         {
             ImDrawList *dl = ImGui::GetWindowDrawList();
@@ -207,19 +158,20 @@ namespace kestrel
                                    ImVec2(geo.width_px, static_cast<float>(geo.height_px)));
             handle_wheel_scroll();
 
-            if (space.line_count <= 0)
+            const int row_count = view.row_count();
+            if (row_count <= 0)
             {
                 return;
             }
 
-            handle_drag_and_tooltip(in, space, btn_min, geo.height_px);
+            handle_drag_and_tooltip(in, view, btn_min, geo.height_px);
 
-            const float row_size = compute_row_size(space.line_count, geo.height_px);
+            const float row_size = compute_row_size(row_count, geo.height_px);
             const float mark_h = std::max(row_size, 1.0F);
 
-            draw_match_marks(dl, in, space, geo, row_size, mark_h);
-            draw_viewport_indicator(dl, in, geo, space.line_count, row_size);
-            draw_cursor_mark(dl, in, geo, cursor_row, space.line_count, row_size, mark_h);
+            draw_match_marks(dl, in, view, geo, row_size, mark_h);
+            draw_viewport_indicator(dl, in, geo, row_count, row_size);
+            draw_cursor_mark(dl, in, geo, cursor_row, row_count, row_size, mark_h);
         }
     } // namespace
 
@@ -231,17 +183,8 @@ namespace kestrel
         }
 
         const MinimapGeometry geo = compute_geometry(in);
-        const bool pattern_active = !search.pattern_empty();
-        MinimapLineSpace space{
-            search.matched_lines(),
-            in.layout.view_lines,
-            in.view.display_only_filtered_lines && pattern_active,
-            in.layout.view_has_custom,
-            0,
-        };
-        space.line_count = compute_line_count(space, search);
-
-        const int cursor_row = source_to_display_row(in, space.orig_matches, space.filtered, in.cursor.line);
+        const ViewIndex view = make_view_index(in, search);
+        const int cursor_row = view.source_to_row(in.cursor.line);
 
         ImGui::SetNextWindowPos(ImVec2(geo.pos_x, geo.pos_y));
         ImGui::SetNextWindowSize(ImVec2(geo.width_px, static_cast<float>(geo.height_px)));
@@ -254,7 +197,7 @@ namespace kestrel
 
         if (ImGui::Begin("##minimap", nullptr, flags))
         {
-            draw_minimap_contents(in, space, geo, cursor_row);
+            draw_minimap_contents(in, view, geo, cursor_row);
         }
         ImGui::End();
     }

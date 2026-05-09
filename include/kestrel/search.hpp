@@ -62,6 +62,11 @@ namespace kestrel
         std::size_t matches_before(std::size_t offset) const;
         std::size_t matches_after(std::size_t offset) const;
 
+        // Monotonic counter bumped each time a scan or load completes.
+        // Lets cache-keys (e.g. UI view_lines) detect that matched_lines /
+        // total_lines / source identity changed without comparing buffers.
+        uint64_t completed_generation() const noexcept { return completed_generation_.load(std::memory_order_acquire); }
+
         // Test helper: wait for any pending job to complete
         void wait_for_completion();
 
@@ -99,6 +104,8 @@ namespace kestrel
         // Async loading state (protected by mutex_)
         bool loading_ = false;
         std::string loading_error_;
+
+        std::atomic<uint64_t> completed_generation_{0};
     };
 
 } // namespace kestrel

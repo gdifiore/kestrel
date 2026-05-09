@@ -45,41 +45,13 @@ namespace kestrel
         // Step in display-row space, not source-line space. In filter / custom
         // view, source-line stepping lands the cursor on hidden lines: the
         // counts shift but the view stays put.
-        const auto &matched = search.matched_lines();
-        const bool filter_view = ui.view.display_only_filtered_lines && !search.pattern_empty();
-        const bool use_custom = ui.layout.view_has_custom;
-        const auto &view_lines = ui.layout.view_lines;
-
-        const int row_count =
-            use_custom   ? static_cast<int>(view_lines.size())
-            : filter_view ? static_cast<int>(matched.size())
-                          : static_cast<int>(total_lines);
+        const ViewIndex view = make_view_index(ui, search);
+        const int row_count = view.row_count();
 
         if (row_count > 0)
         {
             const int max_row = row_count - 1;
-
-            auto row_to_source = [&](int r) -> size_t {
-                r = std::clamp(r, 0, max_row);
-                if (use_custom) return view_lines[r];
-                if (filter_view) return matched[r];
-                return static_cast<size_t>(r);
-            };
-            auto source_to_row = [&](size_t s) -> int {
-                if (use_custom)
-                {
-                    auto it = std::lower_bound(view_lines.begin(), view_lines.end(), s);
-                    return static_cast<int>(it - view_lines.begin());
-                }
-                if (filter_view)
-                {
-                    auto it = std::lower_bound(matched.begin(), matched.end(), s);
-                    return static_cast<int>(it - matched.begin());
-                }
-                return static_cast<int>(s);
-            };
-
-            int cur_row = std::clamp(source_to_row(cur.line), 0, max_row);
+            int cur_row = std::clamp(view.source_to_row(cur.line), 0, max_row);
 
             // Page step = real results-pane height in rows, minus 1 row for
             // overlap context. Subtract chrome (search bar + toolbar + status
@@ -103,7 +75,7 @@ namespace kestrel
             if (ImGui::IsKeyPressed(ImGuiKey_PageDown))
                 cur_row = std::min(cur_row + page_step, max_row);
 
-            cur.line = row_to_source(cur_row);
+            cur.line = view.row_to_source(std::clamp(cur_row, 0, max_row));
         }
 
         cur.offset = lines.line_start(cur.line);

@@ -31,13 +31,13 @@ namespace kestrel
 
         struct Job
         {
-            JobType type;
+            JobType type{};
             std::string pattern;                  // For search jobs
-            unsigned flags;                       // For search jobs
+            unsigned flags = 0;                   // For search jobs
             std::string file_path;                // For load jobs
             std::shared_ptr<const Source> source; // For search jobs - keeps mmap alive
             std::optional<LineIndex> lines;       // For search jobs - line indexing
-            uint64_t generation;                  // For cancellation when newer job arrives
+            uint64_t generation = 0;              // For cancellation when newer job arrives
         };
 
         // Results from completed background operations

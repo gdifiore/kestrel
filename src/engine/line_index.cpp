@@ -66,16 +66,9 @@ namespace kestrel
             scan_for_newlines_parallel(buf);
             return;
         }
-#if defined(__x86_64__) || defined(_M_X64)
-        if (buf.size() >= 32) {
-            scan_for_newlines_simd(buf);
-            return;
-        }
-#endif
-        // Fallback to scalar scan
-        for (std::size_t i = 0; i < buf.size(); ++i)
-            if (buf[i] == '\n')
-                line_starts_.push_back(i + 1);
+        std::vector<std::size_t> offs = scan_chunk(buf.data(), buf.size());
+        line_starts_.reserve(line_starts_.size() + offs.size());
+        line_starts_.insert(line_starts_.end(), offs.begin(), offs.end());
     }
 
     void LineIndex::scan_for_newlines_parallel(std::span<const char> buf)
@@ -109,35 +102,6 @@ namespace kestrel
                 line_starts_.push_back(base + off);
         }
     }
-
-#if defined(__x86_64__) || defined(_M_X64)
-    void LineIndex::scan_for_newlines_simd(std::span<const char> buf)
-    {
-        const char* data = buf.data();
-        std::size_t size = buf.size();
-        const __m256i newline_vec = _mm256_set1_epi8('\n');
-
-        std::size_t i = 0;
-        // Process 32 bytes at a time with AVX2
-        for (; i + 32 <= size; i += 32) {
-            __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(data + i));
-            __m256i cmp = _mm256_cmpeq_epi8(chunk, newline_vec);
-            uint32_t mask = _mm256_movemask_epi8(cmp);
-
-            // Process each bit in mask
-            while (mask) {
-                int bit_pos = __builtin_ctz(mask);
-                line_starts_.push_back(i + bit_pos + 1);
-                mask &= mask - 1; // Clear lowest set bit
-            }
-        }
-
-        // Handle remaining bytes with scalar scan
-        for (; i < size; ++i)
-            if (data[i] == '\n')
-                line_starts_.push_back(i + 1);
-    }
-#endif
 
     std::size_t LineIndex::line_of(std::size_t offset) const
     {

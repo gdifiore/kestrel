@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <span>
 #include <string>
 #include <vector>
@@ -83,26 +84,9 @@ namespace kestrel
 
         bool is_level_first_char(char c)
         {
-            switch (c)
-            {
-            case 'E':
-            case 'W':
-            case 'I':
-            case 'D':
-            case 'T':
-            case 'F':
-            case 'C':
-            case 'e':
-            case 'w':
-            case 'i':
-            case 'd':
-            case 't':
-            case 'f':
-            case 'c':
-                return true;
-            default:
-                return false;
-            }
+            // Lowercase ASCII letters via |0x20; non-letters never collide with
+            // the "ewidtfc" set so the gate stays correct.
+            return std::strchr("ewidtfc", c | 0x20) != nullptr;
         }
 
         ImVec4 level_tint_at(std::span<const char> line, size_t pos, size_t end)
@@ -347,10 +331,10 @@ namespace kestrel
             }
         }
 
-        void autoscroll_to_cursor(const UiInputs &in, const std::vector<size_t> &matched,
-                                  bool filter_view, const ImGuiListClipper &clipper)
+        void autoscroll_to_cursor(const ViewIndex &view, size_t cursor_line,
+                                  const ImGuiListClipper &clipper)
         {
-            int cursor_view_pos = source_to_display_row(in, matched, filter_view, in.cursor.line);
+            int cursor_view_pos = view.source_to_row(cursor_line);
 
             if (cursor_view_pos >= 0 &&
                 (cursor_view_pos < clipper.DisplayStart ||
@@ -409,46 +393,33 @@ namespace kestrel
             }
         }
 
-        struct ResultsView
-        {
-            const std::vector<size_t> &matched;
-            const std::vector<size_t> &displayed_lines;
-            int total_lines;
-            int view_count;
-            bool filter_view;
-            bool use_custom_view;
-        };
-
-        ResultsView build_view(const UiInputs &in, const SearchController &search)
-        {
-            const auto &matched = search.matched_lines();
-            const auto &displayed = in.layout.view_lines;
-            const int total_lines = static_cast<int>(search.line_index().line_count());
-            const bool filtered = !search.pattern_empty();
-            const bool filter_view = in.view.display_only_filtered_lines && filtered;
-            const bool use_custom_view = in.layout.view_has_custom;
-            const int view_count = use_custom_view
-                                       ? static_cast<int>(displayed.size())
-                                   : filter_view
-                                       ? static_cast<int>(matched.size())
-                                       : total_lines;
-            return {matched, displayed, total_lines, view_count, filter_view, use_custom_view};
-        }
-
+        // Average over many glyphs: per-glyph rounding in CalcTextSize
+        // accumulates otherwise, and match rects drift off by ~1 char per ~40.
+        // Cached on (font, font size); CalcTextSize across 50 glyphs is cheap
+        // but not free, and the inputs only change on zoom or font swap.
         float compute_char_width()
         {
-            // Average over many glyphs: per-glyph rounding in CalcTextSize
-            // accumulates otherwise, and match rects drift off by ~1 char per ~40.
-            return ImGui::CalcTextSize(
-                       "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM")
-                       .x /
-                   50.0F;
+            static ImFont *cached_font = nullptr;
+            static float cached_size = 0.0F;
+            static float cached_width = 0.0F;
+            ImFont *font = ImGui::GetFont();
+            float size = ImGui::GetFontSize();
+            if (font != cached_font || size != cached_size)
+            {
+                cached_width = ImGui::CalcTextSize(
+                                   "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM")
+                                   .x /
+                               50.0F;
+                cached_font = font;
+                cached_size = size;
+            }
+            return cached_width;
         }
 
         void draw_results_body(UiInputs &in, const SearchController &search,
                                std::span<const char> source_bytes)
         {
-            const ResultsView view = build_view(in, search);
+            const ViewIndex view = make_view_index(in, search);
             const LineIndex &lines = search.line_index();
             const float char_width = compute_char_width();
             const float line_height = ImGui::GetTextLineHeight();
@@ -458,15 +429,14 @@ namespace kestrel
                 ImGui::TextDisabled("No matches.");
             }
 
+            const int row_count = view.row_count();
             ImGuiListClipper clipper;
-            clipper.Begin(view.view_count);
+            clipper.Begin(row_count);
             while (clipper.Step())
             {
                 for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
                 {
-                    const int line_idx = view.use_custom_view ? static_cast<int>(view.displayed_lines[i])
-                                         : view.filter_view   ? static_cast<int>(view.matched[i])
-                                                              : i;
+                    const int line_idx = static_cast<int>(view.row_to_source(i));
                     draw_line_row(in, search, lines, view.total_lines, source_bytes,
                                   line_idx, line_height, char_width);
                 }
@@ -476,7 +446,7 @@ namespace kestrel
                 (in.cursor.line != in.layout.last_cursor_line ||
                  in.cursor.offset != in.layout.last_cursor_offset))
             {
-                autoscroll_to_cursor(in, view.matched, view.filter_view, clipper);
+                autoscroll_to_cursor(view, in.cursor.line, clipper);
                 in.layout.last_cursor_line = in.cursor.line;
                 in.layout.last_cursor_offset = in.cursor.offset;
             }
@@ -491,43 +461,16 @@ namespace kestrel
         }
     } // namespace
 
-    int source_to_display_row(const UiInputs &in, const std::vector<size_t> &matched,
-                              bool filter_view, size_t source_line)
-    {
-        if (in.layout.view_has_custom)
-        {
-            const auto &v = in.layout.view_lines;
-            auto it = std::lower_bound(v.begin(), v.end(), source_line);
-            if (it != v.end() && *it == source_line)
-            {
-                return static_cast<int>(it - v.begin());
-            }
-            return -1;
-        }
-        if (filter_view)
-        {
-            auto it = std::lower_bound(matched.begin(), matched.end(), source_line);
-            if (it != matched.end() && *it == source_line)
-            {
-                return static_cast<int>(it - matched.begin());
-            }
-            return -1;
-        }
-        return static_cast<int>(source_line);
-    }
-
     // Build/refresh in.layout.view_lines once per frame. Skips work when none
-    // of the inputs (time filter range/state, regex filter view, matched set
-    // identity, total line count) changed since last frame.
+    // of the inputs (time filter range/state, regex filter view, completed
+    // scan generation) changed since last frame.
     void update_view_cache(UiInputs &in, const SearchController &search)
     {
         if (!search.has_source())
         {
             in.layout.view_has_custom = false;
             in.layout.view_lines.clear();
-            in.layout.view_cache_matched_ptr = nullptr;
-            in.layout.view_cache_matched_size = static_cast<size_t>(-1);
-            in.layout.view_cache_total_lines = -1;
+            in.layout.view_cache_completed_gen = 0;
             return;
         }
         const int total_lines = static_cast<int>(search.line_index().line_count());
@@ -545,21 +488,18 @@ namespace kestrel
         {
             in.layout.view_has_custom = false;
             in.layout.view_lines.clear();
-            in.layout.view_cache_matched_ptr = nullptr;
-            in.layout.view_cache_matched_size = static_cast<size_t>(-1);
-            in.layout.view_cache_total_lines = -1;
+            in.layout.view_cache_completed_gen = 0;
             return;
         }
 
+        const uint64_t gen = search.completed_generation();
         const bool same =
             in.layout.view_has_custom &&
+            in.layout.view_cache_completed_gen == gen &&
             in.layout.view_cache_time_filter == time_active &&
             in.layout.view_cache_filter_view == filter_view &&
             in.layout.view_cache_time_start == tf.start &&
-            in.layout.view_cache_time_end == tf.end &&
-            in.layout.view_cache_matched_ptr == matched.data() &&
-            in.layout.view_cache_matched_size == matched.size() &&
-            in.layout.view_cache_total_lines == total_lines;
+            in.layout.view_cache_time_end == tf.end;
         if (same)
         {
             return;
@@ -601,13 +541,11 @@ namespace kestrel
             }
         }
         in.layout.view_has_custom = true;
+        in.layout.view_cache_completed_gen = gen;
         in.layout.view_cache_time_filter = time_active;
         in.layout.view_cache_filter_view = filter_view;
         in.layout.view_cache_time_start = tf.start;
         in.layout.view_cache_time_end = tf.end;
-        in.layout.view_cache_matched_ptr = matched.data();
-        in.layout.view_cache_matched_size = matched.size();
-        in.layout.view_cache_total_lines = total_lines;
     }
 
     void draw_results(UiInputs &in, const SearchController &search)

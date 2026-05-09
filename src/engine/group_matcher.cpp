@@ -122,7 +122,6 @@ namespace kestrel
             return;
 
         const PCRE2_SPTR subject = reinterpret_cast<PCRE2_SPTR>(buf.data());
-        const PCRE2_SIZE span_len = match_end - match_start;
 
         // Anchor both ends so the whole span is the match; group offsets then
         // line up 1:1 with what Hyperscan already flagged.
@@ -149,7 +148,6 @@ namespace kestrel
         // disagrees (flag subtleties), bail rather than emit wrong offsets.
         if (ov[0] != match_start || ov[1] != match_end)
             return;
-        (void)span_len;
 
         for (int g = 1; g < n; ++g)
         {
