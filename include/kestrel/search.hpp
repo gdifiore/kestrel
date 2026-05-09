@@ -73,7 +73,7 @@ namespace kestrel
     private:
         void submit_job(std::string pattern, unsigned flags);
         void on_load_complete(std::shared_ptr<Source> source, std::optional<LineIndex> lines, std::string error, double load_ms);
-        void on_search_complete(std::vector<Match>&& matches, std::vector<std::size_t>&& matched_lines, std::string&& error, double scan_ms);
+        void on_search_complete(std::vector<Match> &&matches, std::vector<std::size_t> &&matched_lines, std::string &&error, double scan_ms);
 
         std::shared_ptr<Source> source_;
         std::optional<LineIndex> lines_;

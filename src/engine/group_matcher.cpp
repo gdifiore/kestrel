@@ -132,8 +132,8 @@ namespace kestrel
         int rc = pcre2_match(
             code_,
             subject,
-            match_end,         // subject length
-            match_start,       // start offset
+            match_end,   // subject length
+            match_start, // start offset
             match_opts,
             md_,
             nullptr);

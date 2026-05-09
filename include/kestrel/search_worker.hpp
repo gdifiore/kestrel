@@ -57,7 +57,7 @@ namespace kestrel
         };
 
         using LoadCallback = std::function<void(std::shared_ptr<Source>, std::optional<LineIndex>, std::string, double)>;
-        using SearchCallback = std::function<void(std::vector<Match>&&, std::vector<std::size_t>&&, std::string&&, double, uint64_t)>;
+        using SearchCallback = std::function<void(std::vector<Match> &&, std::vector<std::size_t> &&, std::string &&, double, uint64_t)>;
 
     public:
         SearchWorker(LoadCallback load_callback, SearchCallback search_callback);
@@ -72,8 +72,8 @@ namespace kestrel
     private:
         void worker_loop();
         std::optional<Job> extract_job();
-        void process_load_job(const Job& job);
-        void process_search_job(const Job& job);
+        void process_load_job(const Job &job);
+        void process_search_job(const Job &job);
 
         LoadCallback load_callback_;
         SearchCallback search_callback_;
@@ -101,7 +101,7 @@ namespace kestrel
         static constexpr std::size_t COMPILE_CACHE_MAX = 8;
         std::list<CompiledEntry> compile_cache_;
 
-        Scanner& get_or_compile(const std::string& pattern, unsigned flags);
+        Scanner &get_or_compile(const std::string &pattern, unsigned flags);
     };
 
 } // namespace kestrel

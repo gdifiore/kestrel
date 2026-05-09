@@ -23,17 +23,21 @@ namespace kestrel
         // macOS / Wayland set this. X11 frequently reports 1.0 on 1440p/4K,
         // leaving fonts at ~15px on a high-pixel-density monitor; fall back to
         // a resolution heuristic so the UI is legible out of the box.
-        if (dpi_scale > 1.05F) {
+        if (dpi_scale > 1.05F)
+        {
             return dpi_scale;
         }
         const GLFWvidmode *mode = mon ? glfwGetVideoMode(mon) : nullptr;
-        if (!mode) {
+        if (!mode)
+        {
             return dpi_scale;
         }
-        if (mode->width >= 3840) {
+        if (mode->width >= 3840)
+        {
             return 2.0F;
         }
-        if (mode->width >= 2560) {
+        if (mode->width >= 2560)
+        {
             return 1.5F;
         }
         return dpi_scale;
@@ -70,9 +74,10 @@ namespace kestrel
 
     Window::Window(std::string_view title, int width, int height)
     {
-        if (!glfwInit()) {
+        if (!glfwInit())
+        {
             throw WindowError("glfwInit failed");
-}
+        }
 
         try
         {
@@ -97,21 +102,23 @@ namespace kestrel
             glfwSetWindowSize(handle_, scaled_w, scaled_h);
             glfwShowWindow(handle_);
 
-            const char* icon_paths[] = {
+            const char *icon_paths[] = {
                 "assets/kestrel-16.png",
                 "assets/kestrel-32.png",
                 "assets/kestrel-48.png",
             };
             constexpr size_t icon_count = sizeof(icon_paths) / sizeof(icon_paths[0]);
             GLFWimage icons[icon_count];
-            unsigned char* icon_pixels[icon_count] = {};
+            unsigned char *icon_pixels[icon_count] = {};
             int loaded = 0;
             for (size_t i = 0; i < icon_count; ++i)
             {
-                if (!std::filesystem::exists(icon_paths[i])) continue;
+                if (!std::filesystem::exists(icon_paths[i]))
+                    continue;
                 int w, h, channels;
-                unsigned char* pixels = stbi_load(icon_paths[i], &w, &h, &channels, 4);
-                if (!pixels) continue;
+                unsigned char *pixels = stbi_load(icon_paths[i], &w, &h, &channels, 4);
+                if (!pixels)
+                    continue;
                 icon_pixels[loaded] = pixels;
                 icons[loaded].width = w;
                 icons[loaded].height = h;
@@ -121,7 +128,8 @@ namespace kestrel
             if (loaded > 0)
             {
                 glfwSetWindowIcon(handle_, loaded, icons);
-                for (int i = 0; i < loaded; ++i) stbi_image_free(icon_pixels[i]);
+                for (int i = 0; i < loaded; ++i)
+                    stbi_image_free(icon_pixels[i]);
             }
 
             glfwSetWindowSizeLimits(handle_, scaled_w, scaled_h, GLFW_DONT_CARE, GLFW_DONT_CARE);
@@ -146,9 +154,10 @@ namespace kestrel
         }
         catch (...)
         {
-            if (handle_) {
+            if (handle_)
+            {
                 glfwDestroyWindow(handle_);
-}
+            }
             glfwTerminate();
             throw;
         }
@@ -202,17 +211,19 @@ namespace kestrel
 
     void Window::dispatch_drop(int count, const char **paths)
     {
-        if (drop_cb_) {
+        if (drop_cb_)
+        {
             drop_cb_(std::span<const char *>{paths, static_cast<size_t>(count)});
-}
+        }
     }
 
     static void drop_trampoline(GLFWwindow *w, int count, const char **paths)
     {
         auto *self = static_cast<Window *>(glfwGetWindowUserPointer(w));
-        if (self) {
+        if (self)
+        {
             self->dispatch_drop(count, paths);
-}
+        }
     }
 
     void Window::on_file_drop(std::function<void(std::span<const char *>)> cb)
@@ -223,17 +234,19 @@ namespace kestrel
 
     void Window::dispatch_refresh()
     {
-        if (refresh_cb_) {
+        if (refresh_cb_)
+        {
             refresh_cb_();
-}
+        }
     }
 
     static void refresh_trampoline(GLFWwindow *w)
     {
         auto *self = static_cast<Window *>(glfwGetWindowUserPointer(w));
-        if (self) {
+        if (self)
+        {
             self->dispatch_refresh();
-}
+        }
     }
 
     void Window::on_refresh(std::function<void()> cb)

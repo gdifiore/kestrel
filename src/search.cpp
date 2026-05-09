@@ -9,7 +9,8 @@
 namespace kestrel
 {
 
-    namespace {
+    namespace
+    {
         // Catch the common mid-typing regex errors (unmatched '(' or '[',
         // trailing '\') before paying the ~227µs hs_compile + worker round-trip.
         // Returns empty string when the pattern looks syntactically plausible;
@@ -24,14 +25,17 @@ namespace kestrel
                 char c = pat[i];
                 if (c == '\\')
                 {
-                    if (i + 1 == pat.size()) return "trailing '\\'";
+                    if (i + 1 == pat.size())
+                        return "trailing '\\'";
                     ++i;
-                    if (in_class) class_first = false; // escaped char consumed first class slot
+                    if (in_class)
+                        class_first = false; // escaped char consumed first class slot
                     continue;
                 }
                 if (in_class)
                 {
-                    if (c == ']' && !class_first) in_class = false;
+                    if (c == ']' && !class_first)
+                        in_class = false;
                     class_first = false;
                 }
                 else if (c == '[')
@@ -39,14 +43,18 @@ namespace kestrel
                     in_class = true;
                     class_first = true;
                 }
-                else if (c == '(') ++paren;
+                else if (c == '(')
+                    ++paren;
                 else if (c == ')')
                 {
-                    if (--paren < 0) return "unmatched ')'";
+                    if (--paren < 0)
+                        return "unmatched ')'";
                 }
             }
-            if (in_class) return "unterminated '['";
-            if (paren > 0) return "unmatched '('";
+            if (in_class)
+                return "unterminated '['";
+            if (paren > 0)
+                return "unmatched '('";
             return {};
         }
     }
@@ -54,10 +62,12 @@ namespace kestrel
     SearchController::SearchController()
     {
         worker_ = std::make_unique<SearchWorker>(
-            [this](std::shared_ptr<Source> source, std::optional<LineIndex> lines, std::string error, double load_ms) {
+            [this](std::shared_ptr<Source> source, std::optional<LineIndex> lines, std::string error, double load_ms)
+            {
                 on_load_complete(std::move(source), std::move(lines), std::move(error), load_ms);
             },
-            [this](std::vector<Match>&& matches, std::vector<std::size_t>&& matched_lines, std::string&& error, double scan_ms, uint64_t /*generation*/) {
+            [this](std::vector<Match> &&matches, std::vector<std::size_t> &&matched_lines, std::string &&error, double scan_ms, uint64_t /*generation*/)
+            {
                 on_search_complete(std::move(matches), std::move(matched_lines), std::move(error), scan_ms);
             });
     }
@@ -276,7 +286,7 @@ namespace kestrel
         completed_generation_.fetch_add(1, std::memory_order_release);
     }
 
-    void SearchController::on_search_complete(std::vector<Match>&& matches, std::vector<std::size_t>&& matched_lines, std::string&& error, double scan_ms)
+    void SearchController::on_search_complete(std::vector<Match> &&matches, std::vector<std::size_t> &&matched_lines, std::string &&error, double scan_ms)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         matches_ = std::move(matches);

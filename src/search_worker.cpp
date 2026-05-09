@@ -85,7 +85,7 @@ namespace kestrel
         return job;
     }
 
-    void SearchWorker::process_load_job(const Job& job)
+    void SearchWorker::process_load_job(const Job &job)
     {
         auto t0 = std::chrono::steady_clock::now();
 
@@ -96,7 +96,7 @@ namespace kestrel
         try
         {
             source = std::make_shared<Source>(Source::from_path(job.file_path));
-            lines.emplace(source->bytes());  // Direct construction, no extra moves
+            lines.emplace(source->bytes()); // Direct construction, no extra moves
 
             spdlog::debug("loaded {} ({} bytes)", job.file_path, source->bytes().size());
         }
@@ -112,7 +112,7 @@ namespace kestrel
         load_callback_(std::move(source), std::move(lines), std::move(error), load_ms);
     }
 
-    void SearchWorker::process_search_job(const Job& job)
+    void SearchWorker::process_search_job(const Job &job)
     {
         auto t0 = std::chrono::steady_clock::now();
 
@@ -122,7 +122,7 @@ namespace kestrel
 
         try
         {
-            Scanner& scanner = get_or_compile(job.pattern, job.flags);
+            Scanner &scanner = get_or_compile(job.pattern, job.flags);
             auto span = job.source->bytes();
             spdlog::debug("worker scanning pattern '{}' on {} bytes", job.pattern, span.size());
             matches = scanner.scan(
@@ -133,7 +133,7 @@ namespace kestrel
             // Build matched_lines with deduplication (requires lines_)
             if (job.lines && !matches.empty())
             {
-                const auto& lines = *job.lines;
+                const auto &lines = *job.lines;
                 // Estimate: assume average 100 chars per line for better allocation
                 std::size_t estimated_lines = matches.size() / 100 + 1;
                 matched_lines.reserve(std::min(estimated_lines, matches.size()));
@@ -165,9 +165,10 @@ namespace kestrel
             // a scan-time failure leaves a working compile we still don't want to
             // pin (likely transient state on this scratch).
             auto it = std::find_if(compile_cache_.begin(), compile_cache_.end(),
-                [&](const CompiledEntry& e_) {
-                    return e_.pattern == job.pattern && e_.flags == job.flags;
-                });
+                                   [&](const CompiledEntry &e_)
+                                   {
+                                       return e_.pattern == job.pattern && e_.flags == job.flags;
+                                   });
             if (it != compile_cache_.end())
                 compile_cache_.erase(it);
         }
@@ -183,12 +184,13 @@ namespace kestrel
 
     // LRU lookup keyed on (pattern, flags). Hit: splice to front, return.
     // Miss: compile (may throw ScannerError), push front, evict tail at cap.
-    Scanner& SearchWorker::get_or_compile(const std::string& pattern, unsigned flags)
+    Scanner &SearchWorker::get_or_compile(const std::string &pattern, unsigned flags)
     {
         auto it = std::find_if(compile_cache_.begin(), compile_cache_.end(),
-            [&](const CompiledEntry& e) {
-                return e.pattern == pattern && e.flags == flags;
-            });
+                               [&](const CompiledEntry &e)
+                               {
+                                   return e.pattern == pattern && e.flags == flags;
+                               });
         if (it != compile_cache_.end())
         {
             compile_cache_.splice(compile_cache_.begin(), compile_cache_, it);

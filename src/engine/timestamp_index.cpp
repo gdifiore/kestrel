@@ -12,7 +12,8 @@ namespace kestrel
         if (b.size() < 19)
             return INT64_MIN;
 
-        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+        auto is_digit = [](char c)
+        { return c >= '0' && c <= '9'; };
         for (int i : {0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18})
             if (!is_digit(b[i]))
                 return INT64_MIN;
@@ -23,7 +24,8 @@ namespace kestrel
         if (b[13] != ':' || b[16] != ':')
             return INT64_MIN;
 
-        auto d = [&](size_t i) { return b[i] - '0'; };
+        auto d = [&](size_t i)
+        { return b[i] - '0'; };
         int year = d(0) * 1000 + d(1) * 100 + d(2) * 10 + d(3);
         int month = d(5) * 10 + d(6);
         int day = d(8) * 10 + d(9);

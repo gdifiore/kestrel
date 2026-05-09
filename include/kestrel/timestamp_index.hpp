@@ -25,8 +25,16 @@ namespace kestrel
         TimestampIndex(std::span<const char> source, const LineIndex &lines);
 
         std::size_t size() const noexcept { return ts_.size(); }
-        int64_t at(std::size_t line) const { assert(line < ts_.size()); return ts_[line]; }
-        bool has(std::size_t line) const { assert(line < ts_.size()); return ts_[line] != kNone; }
+        int64_t at(std::size_t line) const
+        {
+            assert(line < ts_.size());
+            return ts_[line];
+        }
+        bool has(std::size_t line) const
+        {
+            assert(line < ts_.size());
+            return ts_[line] != kNone;
+        }
 
         int64_t min_ts() const noexcept { return min_; }
         int64_t max_ts() const noexcept { return max_; }

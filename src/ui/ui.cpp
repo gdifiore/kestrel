@@ -13,12 +13,12 @@ namespace kestrel
         // panels above. Drawing producers before consumers avoids 1-frame
         // lag that makes the UI jitter while the window is being resized.
         draw_main_menu(in);
-        draw_search_bar(in, search);   // sets search_bar_h
-        draw_toolbar_row(in, search);  // uses search_bar_h, sets toolbar_h
-        draw_status_bar(in, search);   // sets status_bar_h
+        draw_search_bar(in, search);  // sets search_bar_h
+        draw_toolbar_row(in, search); // uses search_bar_h, sets toolbar_h
+        draw_status_bar(in, search);  // sets status_bar_h
         update_view_cache(in, search);
-        draw_results(in, search);      // uses all three
-        draw_minimap(in, search);      // uses all three
+        draw_results(in, search); // uses all three
+        draw_minimap(in, search); // uses all three
         draw_settings_popup(in);
         draw_open_dialog(in);
         draw_goto_line_dialog(in, search);
@@ -26,15 +26,19 @@ namespace kestrel
 
     int ViewIndex::row_count() const noexcept
     {
-        if (use_custom) return static_cast<int>(view_lines.size());
-        if (filter_view) return static_cast<int>(matched.size());
+        if (use_custom)
+            return static_cast<int>(view_lines.size());
+        if (filter_view)
+            return static_cast<int>(matched.size());
         return total_lines;
     }
 
     size_t ViewIndex::row_to_source(int row) const
     {
-        if (use_custom) return view_lines[static_cast<size_t>(row)];
-        if (filter_view) return matched[static_cast<size_t>(row)];
+        if (use_custom)
+            return view_lines[static_cast<size_t>(row)];
+        if (filter_view)
+            return matched[static_cast<size_t>(row)];
         return static_cast<size_t>(row);
     }
 

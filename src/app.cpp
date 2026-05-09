@@ -114,8 +114,10 @@ namespace kestrel
                 const size_t total = lines.line_count();
                 size_t a = *ui.selection.anchor_line;
                 size_t b = ui.cursor.line;
-                if (a > b) std::swap(a, b);
-                if (b >= total) b = total - 1;
+                if (a > b)
+                    std::swap(a, b);
+                if (b >= total)
+                    b = total - 1;
 
                 std::string out;
                 size_t lo = lines.line_start(a);
@@ -260,11 +262,11 @@ namespace kestrel
         // Repaint synchronously while the user drags the window edge — without
         // this, X11/Wayland blocks event polling until the drag ends and the
         // window contents lag/freeze behind the new frame size.
-        w.on_refresh([&]() {
+        w.on_refresh([&]()
+                     {
             w.begin_frame();
             draw_ui(ui, search);
-            w.end_frame();
-        });
+            w.end_frame(); });
         load_config(ui);
         while (!w.should_close() && !ui.quit_requested)
         {

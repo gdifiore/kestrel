@@ -201,7 +201,7 @@ namespace kestrel
         bool filter_view;
 
         int row_count() const noexcept;
-        size_t row_to_source(int row) const;     // row clamped to [0, row_count)
+        size_t row_to_source(int row) const;         // row clamped to [0, row_count)
         int source_to_row(size_t source_line) const; // -1 if filtered out
     };
 

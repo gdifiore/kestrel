@@ -12,10 +12,12 @@
 namespace kestrel
 {
 
-    namespace {
-        struct ScanCtx {
-            std::vector<Match>* out;
-            const std::atomic<uint64_t>* cancel_counter;
+    namespace
+    {
+        struct ScanCtx
+        {
+            std::vector<Match> *out;
+            const std::atomic<uint64_t> *cancel_counter;
             uint64_t my_gen;
         };
 
@@ -78,7 +80,7 @@ namespace kestrel
     }
 
     std::vector<Match> Scanner::scan(std::string_view buf,
-                                     const std::atomic<uint64_t>* cancel_counter,
+                                     const std::atomic<uint64_t> *cancel_counter,
                                      uint64_t my_gen) const
     {
         std::vector<Match> out;
@@ -90,9 +92,11 @@ namespace kestrel
         // inputs fail visibly instead of silently truncating via narrowing.
         // TODO: replace with hs_scan_vector to handle >4 GB inputs.
         std::size_t len = buf.size();
-        if (len > UINT_MAX) {
+        if (len > UINT_MAX)
+        {
             spdlog::warn("scan input {} bytes exceeds hs_scan 4 GB limit; "
-                         "scanning first {} bytes only", len, UINT_MAX);
+                         "scanning first {} bytes only",
+                         len, UINT_MAX);
             len = UINT_MAX;
         }
 
