@@ -31,13 +31,44 @@ namespace kestrel
         auto &cur = ui.cursor;
         const ImGuiIO &io = ImGui::GetIO();
 
+        // Vim navigation only fires when no input widget is focused, so
+        // typing j/k/G/etc. into a search box does not steal focus.
+        const bool vim_active = ui.view.vim_mode && !ImGui::IsAnyItemActive();
+        const bool vim_j = vim_active && ImGui::IsKeyPressed(ImGuiKey_J);
+        const bool vim_k = vim_active && ImGui::IsKeyPressed(ImGuiKey_K);
+        const bool vim_G = vim_active && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G);
+        const bool vim_g = vim_active && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G);
+        const bool vim_cd = vim_active && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D);
+        const bool vim_cu = vim_active && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_U);
+
         bool nav_pressed =
             ImGui::IsKeyPressed(ImGuiKey_UpArrow) ||
             ImGui::IsKeyPressed(ImGuiKey_DownArrow) ||
             ImGui::IsKeyPressed(ImGuiKey_Home) ||
             ImGui::IsKeyPressed(ImGuiKey_End) ||
             ImGui::IsKeyPressed(ImGuiKey_PageUp) ||
-            ImGui::IsKeyPressed(ImGuiKey_PageDown);
+            ImGui::IsKeyPressed(ImGuiKey_PageDown) ||
+            vim_j || vim_k || vim_G || vim_cd || vim_cu;
+
+        // `gg` is a leader sequence — only counts as nav when the second g
+        // lands within the timeout, so the first `g` alone does not move.
+        const double now = ImGui::GetTime();
+        bool vim_gg = false;
+        if (vim_g)
+        {
+            if (ui.vim.pending_g && (now - ui.vim.pending_g_time) < 1.0)
+            {
+                vim_gg = true;
+                ui.vim.pending_g = false;
+            }
+            else
+            {
+                ui.vim.pending_g = true;
+                ui.vim.pending_g_time = now;
+            }
+        }
+        if (vim_gg)
+            nav_pressed = true;
 
         if (nav_pressed)
             ui.selection.extend_or_clear(io.KeyShift, cur.line);
@@ -75,12 +106,57 @@ namespace kestrel
             if (ImGui::IsKeyPressed(ImGuiKey_PageDown))
                 cur_row = std::min(cur_row + page_step, max_row);
 
+            const int half_step = std::max(1, page_step / 2);
+            if (vim_j)
+                cur_row = std::min(cur_row + 1, max_row);
+            if (vim_k)
+                cur_row = std::max(cur_row - 1, 0);
+            if (vim_G)
+                cur_row = max_row;
+            if (vim_gg)
+                cur_row = 0;
+            if (vim_cd)
+                cur_row = std::min(cur_row + half_step, max_row);
+            if (vim_cu)
+                cur_row = std::max(cur_row - half_step, 0);
+
             cur.line = view.row_to_source(std::clamp(cur_row, 0, max_row));
         }
 
         cur.offset = lines.line_start(cur.line);
         ui.layout.matches_before = search.matches_before(cur.offset);
         ui.layout.matches_after = search.matches_after(cur.offset);
+    }
+
+    static void copy_selection_or(UiInputs &ui, const SearchController &search, const char *fallback)
+    {
+        if (ui.selection.anchor_line && search.has_source())
+        {
+            const auto &lines = search.line_index();
+            const auto bytes = search.source_bytes();
+            const size_t total = lines.line_count();
+            size_t a = *ui.selection.anchor_line;
+            size_t b = ui.cursor.line;
+            if (a > b)
+                std::swap(a, b);
+            if (b >= total)
+                b = total - 1;
+
+            std::string out;
+            size_t lo = lines.line_start(a);
+            size_t hi = (b + 1 < total) ? lines.line_start(b + 1) : bytes.size();
+            if (hi > lo)
+            {
+                out.assign(bytes.data() + lo, bytes.data() + hi);
+                while (!out.empty() && (out.back() == '\n' || out.back() == '\r'))
+                    out.pop_back();
+            }
+            ImGui::SetClipboardText(out.c_str());
+        }
+        else
+        {
+            ImGui::SetClipboardText(fallback);
+        }
     }
 
     static void handle_keyboard_shortcuts(UiInputs &ui, const SearchController &search)
@@ -107,33 +183,7 @@ namespace kestrel
 
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C) && !ImGui::IsAnyItemActive())
         {
-            if (ui.selection.anchor_line && search.has_source())
-            {
-                const auto &lines = search.line_index();
-                const auto bytes = search.source_bytes();
-                const size_t total = lines.line_count();
-                size_t a = *ui.selection.anchor_line;
-                size_t b = ui.cursor.line;
-                if (a > b)
-                    std::swap(a, b);
-                if (b >= total)
-                    b = total - 1;
-
-                std::string out;
-                size_t lo = lines.line_start(a);
-                size_t hi = (b + 1 < total) ? lines.line_start(b + 1) : bytes.size();
-                if (hi > lo)
-                {
-                    out.assign(bytes.data() + lo, bytes.data() + hi);
-                    while (!out.empty() && (out.back() == '\n' || out.back() == '\r'))
-                        out.pop_back();
-                }
-                ImGui::SetClipboardText(out.c_str());
-            }
-            else
-            {
-                ImGui::SetClipboardText(ui.search.query);
-            }
+            copy_selection_or(ui, search, ui.search.query);
         }
 
         // Ctrl+V - Paste to search pattern (when no input widget is focused)
@@ -188,6 +238,38 @@ namespace kestrel
                 {
                     ui.cursor.line = line_index.line_of(matches[0].start);
                 }
+            }
+        }
+
+        // Vim non-movement keys. Movement (j/k/gg/G/Ctrl+d/u) lives in
+        // handle_cursor_input where the view-row math is already in scope.
+        if (ui.view.vim_mode && !ImGui::IsAnyItemActive())
+        {
+            // `/` focus search box (forward search in vim)
+            if (ImGui::IsKeyPressed(ImGuiKey_Slash) && !io.KeyCtrl)
+            {
+                ui.hotkeys.focus_search = true;
+            }
+            // `:` open goto-line dialog (stand-in for ex command line)
+            if (ImGui::IsKeyPressed(ImGuiKey_Semicolon) && io.KeyShift)
+            {
+                ui.hotkeys.show_goto_line = true;
+            }
+            // `v` / `V` toggle linewise visual selection anchor
+            if (ImGui::IsKeyPressed(ImGuiKey_V) && !io.KeyCtrl)
+            {
+                if (ui.selection.anchor_line)
+                    ui.selection.anchor_line.reset();
+                else
+                    ui.selection.anchor_line = ui.cursor.line;
+            }
+            // `y` yank selection (or current line) to clipboard, then drop anchor
+            if (ImGui::IsKeyPressed(ImGuiKey_Y) && !io.KeyCtrl)
+            {
+                if (!ui.selection.anchor_line && search.has_source())
+                    ui.selection.anchor_line = ui.cursor.line;
+                copy_selection_or(ui, search, ui.search.query);
+                ui.selection.anchor_line.reset();
             }
         }
 

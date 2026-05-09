@@ -119,6 +119,8 @@ namespace kestrel
                     (void)parse_bool(val, in.view.show_line_nums);
                 else if (key == "snap_scroll")
                     (void)parse_bool(val, in.view.snap_scroll);
+                else if (key == "vim_mode")
+                    (void)parse_bool(val, in.view.vim_mode);
                 else if (key == "color_match")
                     (void)parse_color(val, in.view.color_match);
                 else if (key == "color_scope")
@@ -153,6 +155,7 @@ namespace kestrel
         write_bool(config, "multiline", in.search.multiline);
         write_bool(config, "show_line_nums", in.view.show_line_nums);
         write_bool(config, "snap_scroll", in.view.snap_scroll);
+        write_bool(config, "vim_mode", in.view.vim_mode);
         write_color(config, "color_match", in.view.color_match);
         write_color(config, "color_scope", in.view.color_scope);
 

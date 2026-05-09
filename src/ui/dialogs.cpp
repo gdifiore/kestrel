@@ -48,6 +48,26 @@ namespace kestrel
         ImGui::EndTable();
     }
 
+    static void draw_vim_shortcuts_table()
+    {
+        if (!ImGui::BeginTable("vim_shortcuts", 2, ImGuiTableFlags_SizingFixedFit))
+        {
+            return;
+        }
+        ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 80.0F * ui_scale());
+        ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
+
+        draw_shortcut_row("j / k", "Down / up one line");
+        draw_shortcut_row("gg / G", "First / last line");
+        draw_shortcut_row("Ctrl+d/u", "Half page down / up");
+        draw_shortcut_row("/", "Focus search");
+        draw_shortcut_row(":", "Go to line");
+        draw_shortcut_row("v", "Toggle line selection");
+        draw_shortcut_row("y", "Yank selection (or line)");
+
+        ImGui::EndTable();
+    }
+
     void draw_settings_popup(UiInputs &in)
     {
         if (!in.show_settings)
@@ -62,6 +82,13 @@ namespace kestrel
             ImGui::Checkbox("Snap scroll to lines", &in.view.snap_scroll);
             ImGui::Checkbox("Show only filtered results", &in.view.display_only_filtered_lines);
             ImGui::Checkbox("Color each regex capture group individually", &in.view.highlight_groups);
+
+            ImGui::SeparatorText("Input");
+            ImGui::Checkbox("Vim mode", &in.view.vim_mode);
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::SetTooltip("Enable vim-style navigation (j/k, gg, G, /, v, y, Ctrl+d/u)\nActive when no input widget is focused");
+            }
 
             ImGui::SeparatorText("Regex Flags");
             ImGui::Checkbox("Case sensitive", &in.search.case_sensitive);
@@ -80,6 +107,12 @@ namespace kestrel
 
             ImGui::SeparatorText("Keyboard Shortcuts");
             draw_shortcuts_table();
+
+            if (in.view.vim_mode)
+            {
+                ImGui::SeparatorText("Vim Shortcuts");
+                draw_vim_shortcuts_table();
+            }
         }
         ImGui::End();
     }

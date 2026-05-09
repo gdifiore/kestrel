@@ -50,6 +50,7 @@ namespace kestrel
         bool snap_scroll = true;
         bool is_dark_mode = true;
         bool log_level_tint = true;
+        bool vim_mode = false;
         ImVec4 color_match = ImVec4(1.00f, 0.85f, 0.20f, 1.00f);
         ImVec4 color_scope = ImVec4(0.44f, 0.66f, 0.84f, 1.00f);
 
@@ -113,6 +114,14 @@ namespace kestrel
         bool trigger_open_dialog = false;
         bool show_goto_line = false;
         char goto_line_input[32] = {};
+    };
+
+    // Transient vim-mode state. Tracks pending-leader keys for sequences like
+    // `gg`. Cleared when sequence completes or times out.
+    struct VimState
+    {
+        bool pending_g = false;
+        double pending_g_time = 0.0;
     };
 
     // Per-frame display-view filters. Each filter is independent; the displayed
@@ -182,6 +191,7 @@ namespace kestrel
         FilePrefs file_prefs;
         FileLoadState file_load;
         HotkeyTriggers hotkeys;
+        VimState vim;
         Layout layout;
         GroupMatch groupmatch;
     };
