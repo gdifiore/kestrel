@@ -82,6 +82,7 @@ namespace kestrel
         job_pending_ = false;
         loading_ = false;
         loading_error_.clear();
+        completed_generation_.fetch_add(1, std::memory_order_release);
     }
 
     void SearchController::load_source_async(std::string_view path)
@@ -95,7 +96,6 @@ namespace kestrel
             job_pending_ = true;
         }
 
-        // Submit loading job to worker
         SearchWorker::Job job{
             .type = SearchWorker::JobType::LoadSource,
             .pattern = {},
@@ -103,7 +103,7 @@ namespace kestrel
             .file_path = std::move(path_copy),
             .source = {},
             .lines = {},
-            .generation = 0 // Generation not used for load jobs
+            .generation = 0,
         };
         worker_->submit_job(std::move(job));
     }
@@ -132,6 +132,7 @@ namespace kestrel
         compile_error_.clear();
         dirty_ = false;
         job_pending_ = false;
+        completed_generation_.fetch_add(1, std::memory_order_release);
     }
 
     std::span<const char> SearchController::source_bytes() const
@@ -204,6 +205,7 @@ namespace kestrel
                 matched_lines_.clear();
                 compile_error_.clear();
                 last_scan_ms_ = 0.0;
+                completed_generation_.fetch_add(1, std::memory_order_release);
             }
             else if (std::string reason = quick_regex_validate(pattern_); !reason.empty())
             {
@@ -212,6 +214,7 @@ namespace kestrel
                 matched_lines_.clear();
                 compile_error_ = "regex syntax: " + reason;
                 last_scan_ms_ = 0.0;
+                completed_generation_.fetch_add(1, std::memory_order_release);
             }
             else
             {
@@ -239,9 +242,10 @@ namespace kestrel
             .pattern = std::move(pattern),
             .flags = flags,
             .file_path = {},
-            .source = source_, // Shared ownership keeps Source alive
-            .lines = lines_,   // Copy LineIndex for worker
-            .generation = gen};
+            .source = source_, // shared ownership keeps Source alive
+            .lines = lines_,
+            .generation = gen,
+        };
         worker_->submit_job(std::move(job));
     }
 
@@ -269,6 +273,7 @@ namespace kestrel
         }
         loading_ = false;
         job_pending_ = false;
+        completed_generation_.fetch_add(1, std::memory_order_release);
     }
 
     void SearchController::on_search_complete(std::vector<Match>&& matches, std::vector<std::size_t>&& matched_lines, std::string&& error, double scan_ms)
@@ -286,6 +291,7 @@ namespace kestrel
         compile_error_ = std::move(error);
         last_scan_ms_ = scan_ms;
         job_pending_ = false;
+        completed_generation_.fetch_add(1, std::memory_order_release);
     }
 
     // Relies on matches_ sorted by start (see rescan). Returns a contiguous

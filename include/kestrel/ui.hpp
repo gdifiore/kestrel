@@ -154,13 +154,13 @@ namespace kestrel
         std::vector<size_t> view_lines;
         bool view_has_custom = false;
         // Cache keys for view_lines — invalidate when any input changes.
+        // completed_gen folds matched-set + total-lines identity into one
+        // counter bumped by SearchController on every scan/load completion.
+        uint64_t view_cache_completed_gen = 0;
         int64_t view_cache_time_start = 0;
         int64_t view_cache_time_end = 0;
         bool view_cache_time_filter = false;
         bool view_cache_filter_view = false;
-        size_t view_cache_matched_size = (size_t)-1;
-        const size_t *view_cache_matched_ptr = nullptr;
-        int view_cache_total_lines = -1;
     };
 
     struct GroupMatch
@@ -187,5 +187,24 @@ namespace kestrel
     };
 
     void draw_ui(UiInputs &inputs, const SearchController &search);
+
+    // Maps display rows ↔ source lines for the current frame's view. The view
+    // is one of: full source (identity), regex-filtered (matched lines only),
+    // or custom (regex ∩ time-filter, materialized in layout.view_lines).
+    // Centralizes the switch so cursor nav, autoscroll, and minimap agree.
+    struct ViewIndex
+    {
+        const std::vector<size_t> &view_lines; // active when use_custom
+        const std::vector<size_t> &matched;    // active when filter_view && !use_custom
+        int total_lines;
+        bool use_custom;
+        bool filter_view;
+
+        int row_count() const noexcept;
+        size_t row_to_source(int row) const;     // row clamped to [0, row_count)
+        int source_to_row(size_t source_line) const; // -1 if filtered out
+    };
+
+    ViewIndex make_view_index(const UiInputs &in, const SearchController &search);
 
 } // namespace kestrel
