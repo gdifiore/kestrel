@@ -72,8 +72,12 @@ namespace kestrel
 
     private:
         void submit_job(std::string pattern, unsigned flags);
-        void on_load_complete(std::shared_ptr<Source> source, std::optional<LineIndex> lines, std::string error, double load_ms);
-        void on_search_complete(std::vector<Match> &&matches, std::vector<std::size_t> &&matched_lines, std::string &&error, double scan_ms);
+
+        // Apply any result the worker stashed. UI-thread only: called at the top
+        // of tick() so the live fields below (matches_, source_, lines_, ...) are
+        // mutated by the UI thread alone and readers need no lock. The worker
+        // thread only ever writes into pending_ (under mutex_), never live state.
+        void drain_results();
 
         std::shared_ptr<Source> source_;
         std::optional<LineIndex> lines_;
@@ -104,6 +108,23 @@ namespace kestrel
         // Async loading state (protected by mutex_)
         bool loading_ = false;
         std::string loading_error_;
+
+        // Worker -> UI handoff. The worker stashes one completed result here
+        // (under mutex_); the UI thread moves it out in drain_results() and
+        // applies it to the live fields above. Latest result wins on overwrite.
+        struct PendingResult
+        {
+            bool has_value = false;
+            bool is_load = false;
+            std::shared_ptr<Source> source;         // load
+            std::optional<LineIndex> lines;         // load
+            std::vector<Match> matches;             // search
+            std::vector<std::size_t> matched_lines; // search
+            std::string error;
+            double ms = 0.0;
+            uint64_t generation = 0;
+        };
+        PendingResult pending_; // protected by mutex_
 
         std::atomic<uint64_t> completed_generation_{0};
     };

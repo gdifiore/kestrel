@@ -61,14 +61,31 @@ namespace kestrel
 
     SearchController::SearchController()
     {
+        // Callbacks run on the worker thread: they only stash the result. The UI
+        // thread applies it in drain_results(); see the note on that method.
         worker_ = std::make_unique<SearchWorker>(
             [this](std::shared_ptr<Source> source, std::optional<LineIndex> lines, std::string error, double load_ms)
             {
-                on_load_complete(std::move(source), std::move(lines), std::move(error), load_ms);
+                std::lock_guard<std::mutex> lock(mutex_);
+                pending_ = PendingResult{};
+                pending_.has_value = true;
+                pending_.is_load = true;
+                pending_.source = std::move(source);
+                pending_.lines = std::move(lines);
+                pending_.error = std::move(error);
+                pending_.ms = load_ms;
             },
-            [this](std::vector<Match> &&matches, std::vector<std::size_t> &&matched_lines, std::string &&error, double scan_ms, uint64_t /*generation*/)
+            [this](std::vector<Match> &&matches, std::vector<std::size_t> &&matched_lines, std::string &&error, double scan_ms, uint64_t generation)
             {
-                on_search_complete(std::move(matches), std::move(matched_lines), std::move(error), scan_ms);
+                std::lock_guard<std::mutex> lock(mutex_);
+                pending_ = PendingResult{};
+                pending_.has_value = true;
+                pending_.is_load = false;
+                pending_.matches = std::move(matches);
+                pending_.matched_lines = std::move(matched_lines);
+                pending_.error = std::move(error);
+                pending_.ms = scan_ms;
+                pending_.generation = generation;
             });
     }
 
@@ -83,6 +100,7 @@ namespace kestrel
         lines_.emplace(source_->bytes());
 
         std::lock_guard<std::mutex> lock(mutex_);
+        pending_ = PendingResult{}; // drop any result captured for the old source
         pattern_.clear();
         matches_.clear();
         prefix_max_end_.clear();
@@ -101,6 +119,7 @@ namespace kestrel
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            pending_ = PendingResult{}; // drop any result from a prior source/scan
             loading_ = true;
             loading_error_.clear();
             job_pending_ = true;
@@ -136,6 +155,7 @@ namespace kestrel
         lines_.reset();
 
         std::lock_guard<std::mutex> lock(mutex_);
+        pending_ = PendingResult{}; // drop any result captured for the old source
         matches_.clear();
         prefix_max_end_.clear();
         matched_lines_.clear();
@@ -170,6 +190,9 @@ namespace kestrel
     // Submit new jobs after debounce timeout (first tick stamps time, second submits)
     void SearchController::tick(double now_sec)
     {
+        // Apply any worker result first, on this (UI) thread.
+        drain_results();
+
         // Handle debounced pattern updates
         bool should_submit = false;
         {
@@ -259,48 +282,64 @@ namespace kestrel
         worker_->submit_job(std::move(job));
     }
 
-    void SearchController::on_load_complete(std::shared_ptr<Source> source, std::optional<LineIndex> lines, std::string error, double load_ms)
+    // UI thread. Move the worker's stashed result out from under the lock, then
+    // apply it to live fields with no lock held (the UI thread is the sole writer
+    // of those fields). Clearing job_pending_ here — not on the worker — ties
+    // "job done" to "result applied", which wait_for_completion relies on.
+    void SearchController::drain_results()
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (error.empty())
+        PendingResult r;
         {
-            source_ = std::move(source);
-            lines_ = std::move(lines);
-            ts_index_ = TimestampIndex(source_->bytes(), *lines_);
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!pending_.has_value)
+                return;
+            r = std::move(pending_);
+            pending_ = PendingResult{};
+            job_pending_ = false;
+            if (r.is_load)
+                loading_ = false;
+        }
 
-            // Clear search state
-            pattern_.clear();
-            matches_.clear();
-            prefix_max_end_.clear();
-            matched_lines_.clear();
-            compile_error_.clear();
-            dirty_ = false;
-            last_scan_ms_ = load_ms;
+        if (r.is_load)
+        {
+            if (r.error.empty())
+            {
+                source_ = std::move(r.source);
+                lines_ = std::move(r.lines);
+                ts_index_ = TimestampIndex(source_->bytes(), *lines_);
+
+                // Clear search state
+                pattern_.clear();
+                matches_.clear();
+                prefix_max_end_.clear();
+                matched_lines_.clear();
+                compile_error_.clear();
+                last_scan_ms_ = r.ms;
+
+                std::lock_guard<std::mutex> lock(mutex_);
+                dirty_ = false;
+            }
+            else
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                loading_error_ = std::move(r.error);
+            }
         }
         else
         {
-            loading_error_ = std::move(error);
+            matches_ = std::move(r.matches);
+            prefix_max_end_.resize(matches_.size());
+            std::size_t running_max = 0;
+            for (std::size_t i = 0; i < matches_.size(); ++i)
+            {
+                running_max = std::max(running_max, matches_[i].end);
+                prefix_max_end_[i] = running_max;
+            }
+            matched_lines_ = std::move(r.matched_lines);
+            compile_error_ = std::move(r.error);
+            last_scan_ms_ = r.ms;
         }
-        loading_ = false;
-        job_pending_ = false;
-        completed_generation_.fetch_add(1, std::memory_order_release);
-    }
 
-    void SearchController::on_search_complete(std::vector<Match> &&matches, std::vector<std::size_t> &&matched_lines, std::string &&error, double scan_ms)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        matches_ = std::move(matches);
-        prefix_max_end_.resize(matches_.size());
-        std::size_t running_max = 0;
-        for (std::size_t i = 0; i < matches_.size(); ++i)
-        {
-            running_max = std::max(running_max, matches_[i].end);
-            prefix_max_end_[i] = running_max;
-        }
-        matched_lines_ = std::move(matched_lines);
-        compile_error_ = std::move(error);
-        last_scan_ms_ = scan_ms;
-        job_pending_ = false;
         completed_generation_.fetch_add(1, std::memory_order_release);
     }
 
