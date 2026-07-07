@@ -64,7 +64,7 @@ namespace kestrel
         // Callbacks run on the worker thread: they only stash the result. The UI
         // thread applies it in drain_results(); see the note on that method.
         worker_ = std::make_unique<SearchWorker>(
-            [this](std::shared_ptr<Source> source, std::optional<LineIndex> lines, std::string error, double load_ms)
+            [this](std::shared_ptr<Source> source, std::optional<LineIndex> lines, std::string error, double load_ms, uint64_t generation)
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 pending_ = PendingResult{};
@@ -74,6 +74,7 @@ namespace kestrel
                 pending_.lines = std::move(lines);
                 pending_.error = std::move(error);
                 pending_.ms = load_ms;
+                pending_.generation = generation;
             },
             [this](std::vector<Match> &&matches, std::vector<std::size_t> &&matched_lines, std::string &&error, double scan_ms, uint64_t generation)
             {
@@ -100,6 +101,8 @@ namespace kestrel
         lines_.emplace(source_->bytes());
 
         std::lock_guard<std::mutex> lock(mutex_);
+        search_generation_ = worker_->next_generation();
+        load_generation_ = search_generation_;
         pending_ = PendingResult{}; // drop any result captured for the old source
         pattern_.clear();
         matches_.clear();
@@ -116,12 +119,15 @@ namespace kestrel
     void SearchController::load_source_async(std::string_view path)
     {
         std::string path_copy(path); // Copy for thread safety
+        uint64_t generation = worker_->next_generation();
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
             pending_ = PendingResult{}; // drop any result from a prior source/scan
             loading_ = true;
             loading_error_.clear();
+            search_generation_ = generation; // invalidate in-flight scans for the old source
+            load_generation_ = generation;
             job_pending_ = true;
         }
 
@@ -132,7 +138,7 @@ namespace kestrel
             .file_path = std::move(path_copy),
             .source = {},
             .lines = {},
-            .generation = 0,
+            .generation = generation,
         };
         worker_->submit_job(std::move(job));
     }
@@ -160,6 +166,8 @@ namespace kestrel
         prefix_max_end_.clear();
         matched_lines_.clear();
         compile_error_.clear();
+        search_generation_ = worker_->next_generation();
+        load_generation_ = search_generation_;
         dirty_ = false;
         job_pending_ = false;
         completed_generation_.fetch_add(1, std::memory_order_release);
@@ -184,6 +192,7 @@ namespace kestrel
         last_edit_sec_ = 0.0; // tick() will stamp on first call
 
         std::lock_guard<std::mutex> lock(mutex_);
+        search_generation_ = worker_->next_generation();
         dirty_ = true;
     }
 
@@ -251,22 +260,27 @@ namespace kestrel
             }
             else
             {
-                submit_job(pattern_, flags_);
+                uint64_t generation = 0;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    generation = search_generation_;
+                }
+                submit_job(pattern_, flags_, generation);
             }
         }
     }
 
     // Submit scan job to worker thread with unique generation ID.
     // Worker can check generation against atomic counter to abort stale scans.
-    void SearchController::submit_job(std::string pattern, unsigned flags)
+    void SearchController::submit_job(std::string pattern, unsigned flags, uint64_t generation)
     {
         if (pattern.empty() || !source_)
             return;
 
-        uint64_t gen = worker_->next_generation();
-
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            if (generation != search_generation_)
+                return;
             job_pending_ = true;
         }
 
@@ -277,7 +291,7 @@ namespace kestrel
             .file_path = {},
             .source = source_, // shared ownership keeps Source alive
             .lines = lines_,
-            .generation = gen,
+            .generation = generation,
         };
         worker_->submit_job(std::move(job));
     }
@@ -296,12 +310,17 @@ namespace kestrel
             r = std::move(pending_);
             pending_ = PendingResult{};
             job_pending_ = false;
-            if (r.is_load)
+            if (r.is_load && r.generation == load_generation_)
                 loading_ = false;
         }
 
         if (r.is_load)
         {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (r.generation != load_generation_)
+                    return;
+            }
             if (r.error.empty())
             {
                 source_ = std::move(r.source);
@@ -327,6 +346,11 @@ namespace kestrel
         }
         else
         {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (r.generation != search_generation_)
+                    return;
+            }
             matches_ = std::move(r.matches);
             prefix_max_end_.resize(matches_.size());
             std::size_t running_max = 0;
@@ -384,13 +408,15 @@ namespace kestrel
     void SearchController::wait_for_completion()
     {
         // Keep ticking until no job is pending
+        double now = 1.0;
         while (true)
         {
-            tick(1.0); // Use a dummy timestamp
+            tick(now);
+            now += static_cast<double>(std::max(1, debounce_ms_)) / 1000.0;
 
             {
                 std::lock_guard<std::mutex> lock(mutex_);
-                if (!dirty_ && !job_pending_)
+                if (!dirty_ && !job_pending_ && !loading_)
                 {
                     if (!worker_->has_pending_job())
                         break;

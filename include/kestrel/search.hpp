@@ -71,7 +71,7 @@ namespace kestrel
         void wait_for_completion();
 
     private:
-        void submit_job(std::string pattern, unsigned flags);
+        void submit_job(std::string pattern, unsigned flags, uint64_t generation);
 
         // Apply any result the worker stashed. UI-thread only: called at the top
         // of tick() so the live fields below (matches_, source_, lines_, ...) are
@@ -108,6 +108,8 @@ namespace kestrel
         // Async loading state (protected by mutex_)
         bool loading_ = false;
         std::string loading_error_;
+        uint64_t search_generation_ = 0;
+        uint64_t load_generation_ = 0;
 
         // Worker -> UI handoff. The worker stashes one completed result here
         // (under mutex_); the UI thread moves it out in drain_results() and

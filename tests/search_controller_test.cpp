@@ -80,6 +80,18 @@ TEST_CASE("tick before debounce elapsed does not scan")
     CHECK(sc.is_compiling()); // still dirty
 }
 
+TEST_CASE("wait_for_completion advances default debounce")
+{
+    TempFile tf("foo\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_pattern("foo", 0);
+    sc.wait_for_completion();
+
+    REQUIRE(sc.matches().size() == 1);
+    CHECK(sc.compile_error().empty());
+}
+
 TEST_CASE("bad regex populates compile_error, leaves matches empty")
 {
     TempFile tf("abc\n");
@@ -207,4 +219,23 @@ TEST_CASE("matches_before / matches_after are binary searchable on sorted matche
     CHECK(sc.matches_before(0) == 0);
     CHECK(sc.matches_after(20) == 0);
     CHECK(sc.matches_before(100) == 3);
+}
+
+TEST_CASE("stale scan result is ignored after pattern changes")
+{
+    TempFile tf("foo\nbar\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_debounce_ms(0);
+
+    sc.set_pattern("foo", 0);
+    sc.tick(1.0);
+    sc.tick(1.0);
+
+    sc.set_pattern("bar", 0);
+    sc.wait_for_completion();
+
+    REQUIRE(sc.matches().size() == 1);
+    CHECK(sc.matches()[0].start == 4);
+    CHECK(sc.compile_error().empty());
 }
