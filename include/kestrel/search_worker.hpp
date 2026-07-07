@@ -56,7 +56,7 @@ namespace kestrel
             std::string file_path;
         };
 
-        using LoadCallback = std::function<void(std::shared_ptr<Source>, std::optional<LineIndex>, std::string, double)>;
+        using LoadCallback = std::function<void(std::shared_ptr<Source>, std::optional<LineIndex>, std::string, double, uint64_t)>;
         using SearchCallback = std::function<void(std::vector<Match> &&, std::vector<std::size_t> &&, std::string &&, double, uint64_t)>;
 
     public:

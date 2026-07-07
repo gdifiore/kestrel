@@ -8,6 +8,9 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <cstdlib>
+#include <string>
+#include <unistd.h>
 
 namespace kestrel
 {
@@ -34,6 +37,48 @@ namespace kestrel
 
     private:
         std::filesystem::path path_;
+    };
+
+    class ScopedConfigHome
+    {
+    public:
+        ScopedConfigHome()
+        {
+            const char *old = std::getenv("XDG_CONFIG_HOME");
+            if (old)
+            {
+                old_xdg_ = old;
+            }
+
+            root_ = std::filesystem::temp_directory_path() /
+                    ("kestrel_config_test_" + std::to_string(::getpid()) + "_" +
+                     std::to_string(counter_++));
+            std::filesystem::create_directories(root_);
+            setenv("XDG_CONFIG_HOME", root_.c_str(), 1);
+        }
+
+        ~ScopedConfigHome()
+        {
+            if (old_xdg_.empty())
+            {
+                unsetenv("XDG_CONFIG_HOME");
+            }
+            else
+            {
+                setenv("XDG_CONFIG_HOME", old_xdg_.c_str(), 1);
+            }
+
+            std::error_code ec;
+            std::filesystem::remove_all(root_, ec);
+        }
+
+        ScopedConfigHome(const ScopedConfigHome &) = delete;
+        ScopedConfigHome &operator=(const ScopedConfigHome &) = delete;
+
+    private:
+        std::filesystem::path root_;
+        std::string old_xdg_;
+        static inline int counter_ = 0;
     };
 
     TEST_CASE("Config path function")
@@ -159,7 +204,8 @@ namespace kestrel
 
     TEST_CASE("Config save/load integration test")
     {
-        // This test uses the real config system but backs up the user's config
+        ScopedConfigHome scoped_config;
+
         UiInputs test_ui;
         test_ui.search.case_sensitive = true;
         test_ui.search.dotall = false;
@@ -169,16 +215,6 @@ namespace kestrel
         test_ui.view.color_match = ImVec4(0.1f, 0.2f, 0.3f, 0.4f);
         test_ui.view.color_scope = ImVec4(0.5f, 0.6f, 0.7f, 0.8f);
         test_ui.file_prefs.recent_files = {"/test/file1.txt", "/test/file2.log"};
-
-        auto config_file = config_path();
-        auto backup_file = config_file.string() + ".test_backup";
-
-        // Backup existing config
-        std::error_code ec;
-        if (std::filesystem::exists(config_file))
-        {
-            std::filesystem::copy_file(config_file, backup_file, ec);
-        }
 
         // Save test config
         bool save_success = save_config(test_ui);
@@ -206,29 +242,18 @@ namespace kestrel
             CHECK(loaded_ui.file_prefs.recent_files[1] == "/test/file2.log");
         }
 
-        // Restore original config
-        std::filesystem::remove(config_file, ec);
-        if (std::filesystem::exists(backup_file))
-        {
-            std::filesystem::rename(backup_file, config_file, ec);
-        }
     }
 
     TEST_CASE("Config save - directory creation")
     {
+        ScopedConfigHome scoped_config;
+
         // Test that save_config can create directories
         auto config_file = config_path();
         auto parent_dir = config_file.parent_path();
-        auto backup_dir = parent_dir.string() + ".test_backup";
 
         std::error_code ec;
-
-        // Backup config directory if it exists
-        bool had_config = std::filesystem::exists(parent_dir);
-        if (had_config)
-        {
-            std::filesystem::rename(parent_dir, backup_dir, ec);
-        }
+        std::filesystem::remove_all(parent_dir, ec);
 
         UiInputs ui;
         ui.search.case_sensitive = true;
@@ -240,10 +265,6 @@ namespace kestrel
 
         // Cleanup
         std::filesystem::remove_all(parent_dir, ec);
-        if (had_config && std::filesystem::exists(backup_dir))
-        {
-            std::filesystem::rename(backup_dir, parent_dir, ec);
-        }
     }
 
     TEST_CASE("Recent files - stress test with many files")

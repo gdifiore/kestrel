@@ -109,7 +109,7 @@ namespace kestrel
         auto t1 = std::chrono::steady_clock::now();
         double load_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
-        load_callback_(std::move(source), std::move(lines), std::move(error), load_ms);
+        load_callback_(std::move(source), std::move(lines), std::move(error), load_ms, job.generation);
     }
 
     void SearchWorker::process_search_job(const Job &job)
