@@ -90,13 +90,15 @@ namespace kestrel
         auto t0 = std::chrono::steady_clock::now();
 
         std::shared_ptr<Source> source;
-        std::optional<LineIndex> lines;
+        std::shared_ptr<LineIndex> lines;
+        TimestampIndex timestamps;
         std::string error;
 
         try
         {
             source = std::make_shared<Source>(Source::from_path(job.file_path));
-            lines.emplace(source->bytes()); // Direct construction, no extra moves
+            lines = std::make_shared<LineIndex>(source->bytes());
+            timestamps = TimestampIndex(source->bytes(), *lines);
 
             spdlog::debug("loaded {} ({} bytes)", job.file_path, source->bytes().size());
         }
@@ -109,7 +111,7 @@ namespace kestrel
         auto t1 = std::chrono::steady_clock::now();
         double load_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
-        load_callback_(std::move(source), std::move(lines), std::move(error), load_ms, job.generation);
+        load_callback_(std::move(source), std::move(lines), std::move(timestamps), std::move(error), load_ms, job.generation);
     }
 
     void SearchWorker::process_search_job(const Job &job)
@@ -133,27 +135,15 @@ namespace kestrel
             // Build matched_lines with deduplication (requires lines_)
             if (job.lines && !matches.empty())
             {
-                const auto &lines = *job.lines;
-                // Estimate: assume average 100 chars per line for better allocation
-                std::size_t estimated_lines = matches.size() / 100 + 1;
-                matched_lines.reserve(std::min(estimated_lines, matches.size()));
-
-                // Incremental line tracking (matches are in offset order)
-                std::size_t current_line = lines.line_of(matches[0].start);
-                matched_lines.push_back(current_line);
-
-                for (std::size_t i = 1; i < matches.size(); ++i)
+                const auto starts = job.lines->line_starts();
+                matched_lines.reserve(std::min(matches.size(), starts.size()));
+                std::size_t line = 0;
+                for (const Match &match : matches)
                 {
-                    // Only do binary search when we might have crossed a line boundary
-                    if (current_line + 1 < lines.line_count() &&
-                        matches[i].start >= lines.line_start(current_line + 1))
-                    {
-                        current_line = lines.line_of(matches[i].start);
-                        if (current_line != matched_lines.back())
-                        {
-                            matched_lines.push_back(current_line);
-                        }
-                    }
+                    while (line + 1 < starts.size() && match.start >= starts[line + 1])
+                        ++line;
+                    if (matched_lines.empty() || matched_lines.back() != line)
+                        matched_lines.push_back(line);
                 }
             }
         }

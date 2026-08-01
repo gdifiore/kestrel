@@ -80,7 +80,7 @@ namespace kestrel
         void drain_results();
 
         std::shared_ptr<Source> source_;
-        std::optional<LineIndex> lines_;
+        std::shared_ptr<LineIndex> lines_;
         TimestampIndex ts_index_;
 
         std::string pattern_;
@@ -119,7 +119,8 @@ namespace kestrel
             bool has_value = false;
             bool is_load = false;
             std::shared_ptr<Source> source;         // load
-            std::optional<LineIndex> lines;         // load
+            std::shared_ptr<LineIndex> lines;        // load
+            TimestampIndex timestamps;               // load
             std::vector<Match> matches;             // search
             std::vector<std::size_t> matched_lines; // search
             std::string error;
