@@ -120,3 +120,17 @@ TEST_CASE("many lines")
     CHECK(li.line_of(2000) == 1000); // 'e' of "end"
     CHECK(li.line_of(2002) == 1000); // 'd'
 }
+
+TEST_CASE("append extends an index without retaining a phantom trailing line")
+{
+    std::string buf = "one\n";
+    LineIndex li(view(buf));
+    CHECK(li.line_count() == 1);
+
+    buf += "two\nthree";
+    li.append(view(buf));
+    CHECK(li.line_count() == 3);
+    CHECK(li.line_start(0) == 0);
+    CHECK(li.line_start(1) == 4);
+    CHECK(li.line_start(2) == 8);
+}

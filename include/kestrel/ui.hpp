@@ -56,6 +56,9 @@ namespace kestrel
         bool is_dark_mode = true;
         bool log_level_tint = true;
         bool vim_mode = false;
+        bool tail_mode = false;
+        bool tail_paused = false;
+        bool tail_auto_follow = true;
         ImVec4 color_match = ImVec4(1.00f, 0.85f, 0.20f, 1.00f);
         ImVec4 color_scope = ImVec4(0.44f, 0.66f, 0.84f, 1.00f);
 

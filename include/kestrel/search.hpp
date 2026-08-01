@@ -41,6 +41,12 @@ namespace kestrel
         void set_pattern(std::string_view pattern, unsigned flags);
         void set_debounce_ms(int ms) noexcept { debounce_ms_ = ms; }
 
+        void set_tail_mode(bool on);
+        bool tail_mode() const noexcept { return tail_mode_; }
+        void set_tail_paused(bool paused) noexcept { tail_paused_ = paused; }
+        bool tail_paused() const noexcept { return tail_paused_; }
+        bool tail_updated_last_tick() const noexcept { return tail_updated_; }
+
         // Called each frame with monotonic time in seconds.
         // Processes completed scan results and submits new jobs after debounce.
         void tick(double now_sec);
@@ -78,6 +84,9 @@ namespace kestrel
         // mutated by the UI thread alone and readers need no lock. The worker
         // thread only ever writes into pending_ (under mutex_), never live state.
         void drain_results();
+        void reset_tail_watch();
+        void consume_tail_events(double now_sec);
+        void reload_tail_source(double now_sec);
 
         std::shared_ptr<Source> source_;
         std::shared_ptr<LineIndex> lines_;
@@ -130,6 +139,15 @@ namespace kestrel
         PendingResult pending_; // protected by mutex_
 
         std::atomic<uint64_t> completed_generation_{0};
+
+        // UI-thread-only inotify state. A directory watch catches both writes
+        // and log rotation (rename followed by a replacement file).
+        int inotify_fd_ = -1;
+        int inotify_watch_ = -1;
+        bool tail_mode_ = false;
+        bool tail_paused_ = false;
+        bool tail_needs_refresh_ = false;
+        bool tail_updated_ = false;
     };
 
 } // namespace kestrel

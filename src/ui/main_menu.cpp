@@ -110,6 +110,13 @@ namespace kestrel
                 }
             }
             ImGui::Separator();
+            ImGui::Checkbox("Follow file changes", &in.view.tail_mode);
+            if (in.view.tail_mode)
+            {
+                ImGui::Checkbox("Pause updates", &in.view.tail_paused);
+                ImGui::Checkbox("Auto-follow new lines", &in.view.tail_auto_follow);
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Settings..."))
                 in.show_settings = true;
             ImGui::EndMenu();

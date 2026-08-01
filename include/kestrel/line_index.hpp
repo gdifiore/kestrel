@@ -24,12 +24,17 @@ namespace kestrel
         // Ordered starts, exposed for linear bulk offset-to-line conversion.
         std::span<const std::size_t> line_starts() const noexcept { return line_starts_; }
 
+        // Extend an existing index after an append. The caller supplies the
+        // complete new buffer, whose existing prefix is unchanged.
+        void append(std::span<const char> full_buf);
+
     private:
         void scan_for_newlines(std::span<const char> buf);
         void scan_for_newlines_parallel(std::span<const char> buf);
 
         std::vector<std::size_t> line_starts_;
         std::size_t buf_size_ = 0;
+        bool ends_with_newline_ = false;
     };
 
 } // namespace kestrel

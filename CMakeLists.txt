@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(KESTREL_ENABLE_ASAN "Enable AddressSanitizer for Kestrel targets" OFF)
+option(KESTREL_BUILD_BENCHMARKS "Build manual performance benchmarks" OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
@@ -170,6 +171,15 @@ endfunction()
 
 kestrel_enable_asan(kestrel_core)
 kestrel_enable_asan(kestrel)
+
+if(KESTREL_BUILD_BENCHMARKS)
+    add_executable(tail_stream_bench EXCLUDE_FROM_ALL benchmarks/tail_stream_bench.cpp)
+    target_link_libraries(tail_stream_bench PRIVATE ${VECTORSCAN_TARGET})
+    target_include_directories(tail_stream_bench PRIVATE
+        third_party/vectorscan/src
+        ${CMAKE_BINARY_DIR}/third_party/vectorscan)
+    target_compile_options(tail_stream_bench PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 install(TARGETS kestrel RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES

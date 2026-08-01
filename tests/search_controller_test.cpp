@@ -4,10 +4,12 @@
 #include "kestrel/search.hpp"
 
 #include <cstdio>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <string_view>
+#include <thread>
 
 using kestrel::SearchController;
 
@@ -264,4 +266,68 @@ TEST_CASE("stale scan result is ignored after pattern changes")
     REQUIRE(sc.matches().size() == 1);
     CHECK(sc.matches()[0].start == 4);
     CHECK(sc.compile_error().empty());
+}
+
+TEST_CASE("follow mode refreshes on inotify append and defers it while paused")
+{
+    TempFile tf("one\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_tail_mode(true);
+
+    {
+        std::ofstream out(tf.str(), std::ios::app | std::ios::binary);
+        out << "two\n";
+    }
+    for (int i = 0; i < 100 && sc.source_bytes().size() != 8; ++i)
+    {
+        sc.tick(1.0 + i * 0.001);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(sc.source_bytes().size() == 8);
+    CHECK(sc.line_index().line_count() == 2);
+
+    sc.set_tail_paused(true);
+    {
+        std::ofstream out(tf.str(), std::ios::app | std::ios::binary);
+        out << "three\n";
+    }
+    for (int i = 0; i < 10; ++i)
+    {
+        sc.tick(2.0 + i * 0.001);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(sc.source_bytes().size() == 8);
+
+    sc.set_tail_paused(false);
+    for (int i = 0; i < 100 && sc.source_bytes().size() != 14; ++i)
+    {
+        sc.tick(3.0 + i * 0.001);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(sc.source_bytes().size() == 14);
+    CHECK(sc.line_index().line_count() == 3);
+}
+
+TEST_CASE("follow mode rebuilds its line index after a larger file replacement")
+{
+    TempFile tf("a\nb\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_tail_mode(true);
+
+    {
+        std::ofstream out(tf.str(), std::ios::trunc | std::ios::binary);
+        out << "alpha\nbeta\n";
+    }
+    for (int i = 0; i < 100 && sc.source_bytes().size() != 11; ++i)
+    {
+        sc.tick(1.0 + i * 0.001);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    REQUIRE(sc.source_bytes().size() == 11);
+    CHECK(sc.line_index().line_count() == 2);
+    CHECK(sc.line_index().line_start(0) == 0);
+    CHECK(sc.line_index().line_start(1) == 6);
 }
