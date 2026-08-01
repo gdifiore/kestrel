@@ -9,7 +9,7 @@ Interactive regex filter and text file viewer designed for log files.
 - Live regex filter (Hyperscan/Vectorscan) with PCRE2 capture-group highlighting
 - Match counter (X of Y), next/prev match (`n` / `Shift+N`)
 - Filter view: show only matched lines
-- Time-range filter for parsed timestamps (ISO-8601, syslog)
+- Time-range filter for leading ISO-8601 timestamps (including UTC offsets)
 - Log-level auto-tint (ERROR / WARN / INFO / DEBUG)
 - Synthetic minimap with click-to-jump and viewport indicator
 - Light/dark theme; configurable match/cursor colors
@@ -50,6 +50,13 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
 ```
 
+The first configure downloads spdlog and JetBrains Mono. To install outside
+the source checkout (including the icon and font assets):
+
+```bash
+cmake --install build
+```
+
 ## Run
 
 ```bash
@@ -62,6 +69,8 @@ cmake --build build -j4
 ctest --test-dir build --output-on-failure
 ```
 
+For an AddressSanitizer build, configure with `-DKESTREL_ENABLE_ASAN=ON`.
+
 ## Bug reports
 
 Logs go to stderr. Capture with debug verbosity and attach to the issue:
@@ -70,7 +79,7 @@ Logs go to stderr. Capture with debug verbosity and attach to the issue:
 KESTREL_LOG=debug ./build/kestrel 2> kestrel.log
 ```
 
-Valid `KESTREL_LOG` values: `trace`, `debug`, `info` (default), `warn`, `err`, `off`.
+Valid `KESTREL_LOG` values: `trace`, `debug`, `info`, `warn` (default), `err`, `off`.
 
 ##### Icon Credit (modified by me)
 <a href="https://www.flaticon.com/free-icons/american-kestrel-bird" title="american kestrel bird icons">American kestrel bird icons created by Delwar018 - Flaticon</a>

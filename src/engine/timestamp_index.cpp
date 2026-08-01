@@ -48,6 +48,40 @@ namespace kestrel
         if (day > max_day)
             return INT64_MIN;
 
+        // Fractional seconds do not affect the index's second precision, but
+        // consume them before looking for an optional timezone suffix.
+        size_t pos = 19;
+        if (pos < b.size() && b[pos] == '.')
+        {
+            ++pos;
+            const size_t fraction_start = pos;
+            while (pos < b.size() && is_digit(b[pos]))
+                ++pos;
+            if (pos == fraction_start)
+                return INT64_MIN;
+        }
+
+        int offset_seconds = 0;
+        if (pos < b.size() && b[pos] == 'Z')
+        {
+            ++pos;
+        }
+        else if (pos < b.size() && (b[pos] == '+' || b[pos] == '-'))
+        {
+            const bool negative = b[pos] == '-';
+            if (pos + 6 > b.size() || !is_digit(b[pos + 1]) ||
+                !is_digit(b[pos + 2]) || b[pos + 3] != ':' ||
+                !is_digit(b[pos + 4]) || !is_digit(b[pos + 5]))
+                return INT64_MIN;
+            const int offset_hour = d(pos + 1) * 10 + d(pos + 2);
+            const int offset_minute = d(pos + 4) * 10 + d(pos + 5);
+            if (offset_hour > 23 || offset_minute > 59)
+                return INT64_MIN;
+            offset_seconds = offset_hour * 3600 + offset_minute * 60;
+            if (negative)
+                offset_seconds = -offset_seconds;
+        }
+
         struct tm t{};
         t.tm_year = year - 1900;
         t.tm_mon = month - 1;
@@ -58,7 +92,7 @@ namespace kestrel
         time_t r = timegm(&t);
         if (r == (time_t)-1)
             return INT64_MIN;
-        return (int64_t)r;
+        return static_cast<int64_t>(r) - offset_seconds;
     }
 
     TimestampIndex::TimestampIndex(std::span<const char> src, const LineIndex &li)

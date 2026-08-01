@@ -11,8 +11,8 @@ namespace kestrel
     class LineIndex;
 
     // Parse ISO-8601 at the start of `buf`:
-    //   YYYY-MM-DD[T ]HH:MM:SS
-    // Fractional seconds and timezone suffix are ignored (value treated as UTC).
+    //   YYYY-MM-DD[T ]HH:MM:SS[.fraction][Z|+HH:MM|-HH:MM]
+    // Fractional seconds are ignored. A missing timezone is treated as UTC.
     // Returns epoch seconds or INT64_MIN on no match.
     int64_t parse_iso8601(std::span<const char> buf);
 

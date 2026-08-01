@@ -16,6 +16,18 @@
 namespace kestrel
 {
 
+    static std::filesystem::path asset_path(const char *name)
+    {
+        const auto local = std::filesystem::path("assets") / name;
+        if (std::filesystem::exists(local))
+            return local;
+#ifdef KESTREL_INSTALL_ASSET_DIR
+        return std::filesystem::path(KESTREL_INSTALL_ASSET_DIR) / name;
+#else
+        return local;
+#endif
+    }
+
     static float derive_ui_scale(GLFWmonitor *mon)
     {
         const float dpi_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(mon);
@@ -103,9 +115,9 @@ namespace kestrel
             glfwShowWindow(handle_);
 
             const char *icon_paths[] = {
-                "assets/kestrel-16.png",
-                "assets/kestrel-32.png",
-                "assets/kestrel-48.png",
+                "kestrel-16.png",
+                "kestrel-32.png",
+                "kestrel-48.png",
             };
             constexpr size_t icon_count = sizeof(icon_paths) / sizeof(icon_paths[0]);
             GLFWimage icons[icon_count];
@@ -113,10 +125,11 @@ namespace kestrel
             int loaded = 0;
             for (size_t i = 0; i < icon_count; ++i)
             {
-                if (!std::filesystem::exists(icon_paths[i]))
+                const auto path = asset_path(icon_paths[i]);
+                if (!std::filesystem::exists(path))
                     continue;
                 int w, h, channels;
-                unsigned char *pixels = stbi_load(icon_paths[i], &w, &h, &channels, 4);
+                unsigned char *pixels = stbi_load(path.string().c_str(), &w, &h, &channels, 4);
                 if (!pixels)
                     continue;
                 icon_pixels[loaded] = pixels;
@@ -140,7 +153,12 @@ namespace kestrel
 
 #ifdef KESTREL_FONT_REGULAR
             ImGuiIO &io = ImGui::GetIO();
-            io.Fonts->AddFontFromFileTTF(KESTREL_FONT_REGULAR, BASE_FONT_PX * main_scale);
+            std::filesystem::path font_path = KESTREL_FONT_REGULAR;
+#ifdef KESTREL_FONT_INSTALLED
+            if (!std::filesystem::exists(font_path))
+                font_path = KESTREL_FONT_INSTALLED;
+#endif
+            io.Fonts->AddFontFromFileTTF(font_path.string().c_str(), BASE_FONT_PX * main_scale);
 #endif
 
             // configurable later

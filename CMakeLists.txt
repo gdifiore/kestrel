@@ -1,16 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 project(kestrel CXX)
 
+include(GNUInstallDirs)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Enable ASAN for Debug builds (applies to all targets including vectorscan)
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer -g")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address")
-endif()
+option(KESTREL_ENABLE_ASAN "Enable AddressSanitizer for Kestrel targets" OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
@@ -104,10 +101,10 @@ else()
     set(VECTORSCAN_TARGET Vectorscan::hs)
 endif()
 
-# ---- App ----
-add_executable(kestrel
-    src/main.cpp
-    src/app.cpp
+# ---- Project core ----
+# Keep non-UI behavior in one target so the application and every test exercise
+# the same implementation and dependency graph.
+add_library(kestrel_core STATIC
     src/util.cpp
     src/config.cpp
     src/search.cpp
@@ -117,6 +114,26 @@ add_executable(kestrel
     src/engine/line_index.cpp
     src/engine/timestamp_index.cpp
     src/engine/group_matcher.cpp
+)
+target_include_directories(kestrel_core PUBLIC
+    include
+    third_party/vectorscan/src
+    ${CMAKE_BINARY_DIR}/third_party/vectorscan
+)
+target_link_libraries(kestrel_core PUBLIC
+    imgui
+    ${VECTORSCAN_TARGET}
+    spdlog::spdlog
+    pcre2-8-static
+)
+target_compile_options(kestrel_core PRIVATE
+    -Wall -Wextra -Wpedantic
+)
+
+# ---- App ----
+add_executable(kestrel
+    src/main.cpp
+    src/app.cpp
     src/ui/window.cpp
     src/ui/ui.cpp
     src/ui/main_menu.cpp
@@ -127,20 +144,42 @@ add_executable(kestrel
     src/ui/dialogs.cpp
 )
 target_include_directories(kestrel PRIVATE
-    include
-    third_party/vectorscan/src
-    ${CMAKE_BINARY_DIR}/third_party/vectorscan
     third_party/ImGuiFileDialog/stb
 )
-target_link_libraries(kestrel PRIVATE imgui imguifiledialog ${VECTORSCAN_TARGET} spdlog::spdlog pcre2-8-static)
+target_link_libraries(kestrel PRIVATE kestrel_core imguifiledialog)
 target_compile_definitions(kestrel PRIVATE
     KESTREL_FONT_REGULAR="${KESTREL_FONT_DIR}/JetBrainsMono-Regular.ttf"
+    KESTREL_FONT_INSTALLED="${CMAKE_INSTALL_FULL_DATADIR}/kestrel/fonts/JetBrainsMono-Regular.ttf"
+    KESTREL_INSTALL_ASSET_DIR="${CMAKE_INSTALL_FULL_DATADIR}/kestrel/assets"
     IMGUI_DISABLE_DEBUG_TOOLS
 )
 target_compile_options(kestrel PRIVATE
     -Wall -Wextra -Wpedantic
     $<$<CONFIG:Release>:-O3>
 )
+
+function(kestrel_enable_asan target)
+    if(KESTREL_ENABLE_ASAN)
+        if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+            message(FATAL_ERROR "KESTREL_ENABLE_ASAN requires Clang or GCC")
+        endif()
+        target_compile_options(${target} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+        target_link_options(${target} PRIVATE -fsanitize=address)
+    endif()
+endfunction()
+
+kestrel_enable_asan(kestrel_core)
+kestrel_enable_asan(kestrel)
+
+install(TARGETS kestrel RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES
+    assets/kestrel-16.png
+    assets/kestrel-32.png
+    assets/kestrel-48.png
+    assets/kestrel.png
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/kestrel/assets)
+install(FILES "${KESTREL_FONT_DIR}/JetBrainsMono-Regular.ttf"
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/kestrel/fonts)
 
 enable_testing()
 add_subdirectory(tests)
