@@ -71,6 +71,26 @@ ctest --test-dir build --output-on-failure
 
 For an AddressSanitizer build, configure with `-DKESTREL_ENABLE_ASAN=ON`.
 
+## Releases
+
+Pushing a semantic-version tag (for example, `v1.2.3`) builds, tests, and
+publishes Linux and Apple Silicon macOS release archives. Each archive contains
+the files that belong under `/usr/local`, including the executable, font, and
+icon assets.
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+To install a downloaded release archive:
+
+```bash
+tar -xzf kestrel-<platform>-<version>.tar.gz -C /tmp/kestrel
+sudo cp -a /tmp/kestrel/. /usr/local/
+kestrel
+```
+
 ## Bug reports
 
 Logs go to stderr. Capture with debug verbosity and attach to the issue:
