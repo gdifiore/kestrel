@@ -64,7 +64,7 @@ namespace kestrel
         // Callbacks run on the worker thread: they only stash the result. The UI
         // thread applies it in drain_results(); see the note on that method.
         worker_ = std::make_unique<SearchWorker>(
-            [this](std::shared_ptr<Source> source, std::optional<LineIndex> lines, std::string error, double load_ms, uint64_t generation)
+            [this](std::shared_ptr<Source> source, std::shared_ptr<LineIndex> lines, TimestampIndex timestamps, std::string error, double load_ms, uint64_t generation)
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 pending_ = PendingResult{};
@@ -72,6 +72,7 @@ namespace kestrel
                 pending_.is_load = true;
                 pending_.source = std::move(source);
                 pending_.lines = std::move(lines);
+                pending_.timestamps = std::move(timestamps);
                 pending_.error = std::move(error);
                 pending_.ms = load_ms;
                 pending_.generation = generation;
@@ -98,7 +99,8 @@ namespace kestrel
     void SearchController::load_source(std::string_view path)
     {
         source_ = std::make_shared<Source>(Source::from_path(path));
-        lines_.emplace(source_->bytes());
+        lines_ = std::make_shared<LineIndex>(source_->bytes());
+        ts_index_ = TimestampIndex(source_->bytes(), *lines_);
 
         std::lock_guard<std::mutex> lock(mutex_);
         search_generation_ = worker_->next_generation();
@@ -335,7 +337,7 @@ namespace kestrel
             {
                 source_ = std::move(r.source);
                 lines_ = std::move(r.lines);
-                ts_index_ = TimestampIndex(source_->bytes(), *lines_);
+                ts_index_ = std::move(r.timestamps);
 
                 // Clear search state
                 pattern_.clear();

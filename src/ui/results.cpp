@@ -522,6 +522,7 @@ namespace kestrel
         in.layout.view_lines.clear();
         if (filter_view)
         {
+            in.layout.view_lines.reserve(matched.size());
             for (size_t m : matched)
             {
                 if (pass(m))
@@ -532,6 +533,7 @@ namespace kestrel
         }
         else
         {
+            in.layout.view_lines.reserve(static_cast<size_t>(total_lines));
             for (size_t i = 0; i < static_cast<size_t>(total_lines); i++)
             {
                 if (pass(i))

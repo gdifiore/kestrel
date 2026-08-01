@@ -3,6 +3,7 @@
 #include "kestrel/line_index.hpp"
 #include "kestrel/scanner.hpp"
 #include "kestrel/source.hpp"
+#include "kestrel/timestamp_index.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -36,7 +37,7 @@ namespace kestrel
             unsigned flags = 0;                   // For search jobs
             std::string file_path;                // For load jobs
             std::shared_ptr<const Source> source; // For search jobs - keeps mmap alive
-            std::optional<LineIndex> lines;       // For search jobs - line indexing
+            std::shared_ptr<const LineIndex> lines; // For search jobs - shared, avoids copying the index
             uint64_t generation = 0;              // For cancellation when newer job arrives
         };
 
@@ -56,7 +57,7 @@ namespace kestrel
             std::string file_path;
         };
 
-        using LoadCallback = std::function<void(std::shared_ptr<Source>, std::optional<LineIndex>, std::string, double, uint64_t)>;
+        using LoadCallback = std::function<void(std::shared_ptr<Source>, std::shared_ptr<LineIndex>, TimestampIndex, std::string, double, uint64_t)>;
         using SearchCallback = std::function<void(std::vector<Match> &&, std::vector<std::size_t> &&, std::string &&, double, uint64_t)>;
 
     public:

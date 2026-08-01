@@ -21,6 +21,9 @@ namespace kestrel
         // Byte offset where line `line` begins.
         std::size_t line_start(std::size_t line) const { return line_starts_[line]; }
 
+        // Ordered starts, exposed for linear bulk offset-to-line conversion.
+        std::span<const std::size_t> line_starts() const noexcept { return line_starts_; }
+
     private:
         void scan_for_newlines(std::span<const char> buf);
         void scan_for_newlines_parallel(std::span<const char> buf);
