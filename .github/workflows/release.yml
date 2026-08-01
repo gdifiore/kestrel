@@ -39,7 +39,8 @@ jobs:
           sudo apt-get install --yes \
             build-essential cmake ninja-build pkg-config ragel libboost-dev \
             libsqlite3-dev libgl1-mesa-dev libx11-dev libxrandr-dev \
-            libxinerama-dev libxcursor-dev libxi-dev
+            libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
+            libwayland-dev libxkbcommon-dev
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
