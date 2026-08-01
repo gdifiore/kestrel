@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if defined(__AVX2__)
 #include <immintrin.h>
 #endif
 
@@ -25,7 +25,7 @@ namespace kestrel
         {
             std::vector<std::size_t> out;
             out.reserve(size / 100 + 1);
-#if defined(__x86_64__) || defined(_M_X64)
+#if defined(__AVX2__)
             const __m256i nl = _mm256_set1_epi8('\n');
             std::size_t i = 0;
             for (; i + 32 <= size; i += 32)
