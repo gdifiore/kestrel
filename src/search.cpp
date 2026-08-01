@@ -227,7 +227,15 @@ namespace kestrel
         }
 
         // Submit new job if debounce elapsed and we have source
-        if (should_submit && source_)
+        if (should_submit && !source_)
+        {
+            // A query can be entered before a file is loaded. There is no job
+            // to submit in that state, so it must not remain "dirty" forever.
+            std::lock_guard<std::mutex> lock(mutex_);
+            dirty_ = false;
+            last_edit_sec_ = 0.0;
+        }
+        else if (should_submit)
         {
             {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -238,7 +246,7 @@ namespace kestrel
                 dirty_ = false; // Clear dirty when submitting
             }
 
-            // Reset edit state - job submitted or processed
+            // Reset edit state - job submitted or processed.
             last_edit_sec_ = 0.0;
 
             if (pattern_.empty())

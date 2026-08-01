@@ -92,6 +92,17 @@ TEST_CASE("wait_for_completion advances default debounce")
     CHECK(sc.compile_error().empty());
 }
 
+TEST_CASE("wait_for_completion completes without a source")
+{
+    SearchController sc;
+    sc.set_pattern("foo", 0);
+
+    sc.wait_for_completion();
+
+    CHECK_FALSE(sc.is_compiling());
+    CHECK(sc.matches().empty());
+}
+
 TEST_CASE("bad regex populates compile_error, leaves matches empty")
 {
     TempFile tf("abc\n");
