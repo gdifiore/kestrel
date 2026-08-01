@@ -92,6 +92,11 @@ if(KESTREL_VENDOR_VECTORSCAN)
         -Wno-error=unused-but-set-variable
         -Wno-error=deprecated-declarations
     )
+    # Newer Apple Clang warns about Vectorscan's volatile compound assignment;
+    # Vectorscan enables -Werror for its own sources.
+    if(APPLE)
+        add_compile_options(-Wno-error=deprecated-volatile)
+    endif()
     # Disable vectorscan debug prints by undefining DEBUG
     add_compile_options(-UDEBUG)
     add_subdirectory(third_party/vectorscan EXCLUDE_FROM_ALL)
