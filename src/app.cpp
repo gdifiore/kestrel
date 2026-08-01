@@ -377,6 +377,8 @@ namespace kestrel
                         ui.groupmatch.group_matcher_.reset();
                     else
                         ui.groupmatch.group_matcher_ = GroupMatcher::compile(gm_last_pattern, flags);
+                    ui.groupmatch.span_cache.clear();
+                    ui.groupmatch.cache_generation = 0;
                 }
             }
 
