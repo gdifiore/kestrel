@@ -25,6 +25,12 @@ namespace kestrel
     {
 
     public:
+        struct LoadProgressSnapshot
+        {
+            SearchWorker::LoadPhase phase = SearchWorker::LoadPhase::Opening;
+            std::size_t completed = 0;
+            std::size_t total = 0;
+        };
         SearchController();
         ~SearchController();
 
@@ -32,6 +38,8 @@ namespace kestrel
         void load_source_async(std::string_view path); // async version
         bool is_loading() const noexcept;
         std::string get_loading_error() const;
+        LoadProgressSnapshot load_progress() const noexcept;
+        void cancel_loading();
         void clear_source();
         bool has_source() const noexcept { return source_ != nullptr; }
         std::span<const char> source_bytes() const;
@@ -119,6 +127,7 @@ namespace kestrel
         std::string loading_error_;
         uint64_t search_generation_ = 0;
         uint64_t load_generation_ = 0;
+        std::shared_ptr<SearchWorker::LoadProgress> load_progress_;
 
         // Worker -> UI handoff. The worker stashes one completed result here
         // (under mutex_); the UI thread moves it out in drain_results() and
@@ -133,6 +142,7 @@ namespace kestrel
             std::vector<Match> matches;             // search
             std::vector<std::size_t> matched_lines; // search
             std::string error;
+            bool cancelled = false;
             double ms = 0.0;
             uint64_t generation = 0;
         };

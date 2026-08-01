@@ -88,30 +88,74 @@ namespace kestrel
     void SearchWorker::process_load_job(const Job &job)
     {
         auto t0 = std::chrono::steady_clock::now();
+        LoadOutcome outcome = build_load(job);
+        auto t1 = std::chrono::steady_clock::now();
+        const double load_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
-        std::shared_ptr<Source> source;
-        std::shared_ptr<LineIndex> lines;
-        TimestampIndex timestamps;
-        std::string error;
+        load_callback_(std::move(outcome.source), std::move(outcome.lines),
+                       std::move(outcome.timestamps), std::move(outcome.error),
+                       outcome.cancelled, load_ms, job.generation);
+    }
+
+    bool SearchWorker::is_current(const Job &job) const noexcept
+    {
+        return generation_.load(std::memory_order_relaxed) == job.generation;
+    }
+
+    void SearchWorker::set_load_progress(const Job &job, LoadPhase phase,
+                                         std::size_t completed, std::size_t total) const
+    {
+        if (!job.load_progress)
+            return;
+        job.load_progress->phase.store(phase, std::memory_order_relaxed);
+        job.load_progress->completed.store(completed, std::memory_order_relaxed);
+        job.load_progress->total.store(total, std::memory_order_relaxed);
+    }
+
+    SearchWorker::LoadOutcome SearchWorker::build_load(const Job &job)
+    {
+        LoadOutcome outcome;
+        if (!is_current(job))
+        {
+            outcome.cancelled = true;
+            set_load_progress(job, LoadPhase::Cancelled, 0, 0);
+            return outcome;
+        }
 
         try
         {
-            source = std::make_shared<Source>(Source::from_path(job.file_path));
-            lines = std::make_shared<LineIndex>(source->bytes());
-            timestamps = TimestampIndex(source->bytes(), *lines);
+            outcome.source = std::make_shared<Source>(Source::from_path(job.file_path));
+            if (!is_current(job))
+                throw LoadCancelled();
 
-            spdlog::debug("loaded {} ({} bytes)", job.file_path, source->bytes().size());
+            const auto report = [&](std::size_t completed, std::size_t total)
+            {
+                if (job.load_progress)
+                    set_load_progress(job,
+                                      job.load_progress->phase.load(std::memory_order_relaxed),
+                                      completed, total);
+                return is_current(job);
+            };
+            set_load_progress(job, LoadPhase::IndexingLines, 0, outcome.source->bytes().size());
+            outcome.lines = std::make_shared<LineIndex>(outcome.source->bytes(), report);
+            set_load_progress(job, LoadPhase::IndexingTimestamps, 0, outcome.lines->line_count());
+            outcome.timestamps = TimestampIndex(outcome.source->bytes(), *outcome.lines, report);
+            set_load_progress(job, LoadPhase::Complete, 1, 1);
+
+            spdlog::debug("loaded {} ({} bytes)", job.file_path, outcome.source->bytes().size());
+        }
+        catch (const LoadCancelled &)
+        {
+            outcome.cancelled = true;
+            set_load_progress(job, LoadPhase::Cancelled, 0, 0);
         }
         catch (const SourceError &e)
         {
-            error = e.what();
+            outcome.error = e.what();
+            set_load_progress(job, LoadPhase::Failed, 0, 0);
             spdlog::error("async load_source failed: {} ({})", job.file_path, e.what());
         }
-
-        auto t1 = std::chrono::steady_clock::now();
-        double load_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-
-        load_callback_(std::move(source), std::move(lines), std::move(timestamps), std::move(error), load_ms, job.generation);
+        return outcome;
     }
 
     void SearchWorker::process_search_job(const Job &job)

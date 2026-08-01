@@ -109,6 +109,7 @@ namespace kestrel
     struct FileLoadState
     {
         bool loading = false;
+        bool cancel_requested = false;
         std::string loading_path;
         std::string loading_error;
         std::optional<std::string> pending_open;

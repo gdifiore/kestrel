@@ -52,8 +52,29 @@ namespace kestrel
 
         if (ImGui::Begin("##status_bar", nullptr, flags))
         {
+            const auto progress = search.load_progress();
+            if (search.is_loading())
+            {
+                const char *phase = progress.phase == SearchWorker::LoadPhase::IndexingLines ? "Indexing lines" :
+                                    progress.phase == SearchWorker::LoadPhase::IndexingTimestamps ? "Indexing timestamps" :
+                                    "Opening";
+                ImGui::TextDisabled("%s", phase);
+                if (progress.total > 0)
+                {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%zu / %zu", progress.completed, progress.total);
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("| mapped source; index allocation in progress");
+            }
             if (search.has_source())
             {
+                if (search.is_loading())
+                {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("|");
+                    ImGui::SameLine();
+                }
                 const size_t lines = search.line_index().line_count();
                 const size_t bytes = search.source_bytes().size();
                 char size_buf[32];
@@ -68,7 +89,14 @@ namespace kestrel
                 ImGui::SameLine();
                 ImGui::Text("%zu matches", search.matches().size());
                 ImGui::SameLine();
-                ImGui::TextDisabled("%.2f ms", search.last_scan_ms());
+                if (search.is_compiling())
+                    ImGui::TextDisabled("Scanning…");
+                else
+                    ImGui::TextDisabled("scan %.2f ms", search.last_scan_ms());
+                ImGui::SameLine();
+                ImGui::TextDisabled("| mmap %s + index %zu KB",
+                                    size_buf,
+                                    (search.line_index().memory_bytes() + search.timestamp_index().memory_bytes()) / 1024);
                 if (!in.file_load.current_path.empty())
                 {
                     ImGui::SameLine();

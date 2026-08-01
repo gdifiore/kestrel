@@ -95,12 +95,15 @@ namespace kestrel
         return static_cast<int64_t>(r) - offset_seconds;
     }
 
-    TimestampIndex::TimestampIndex(std::span<const char> src, const LineIndex &li)
+    TimestampIndex::TimestampIndex(std::span<const char> src, const LineIndex &li,
+                                   ProgressCallback progress)
     {
         const size_t n = li.line_count();
         ts_.resize(n, kNone);
         for (size_t i = 0; i < n; i++)
         {
+            if (progress && (i % 8192 == 0) && !progress(i, n))
+                throw LoadCancelled();
             size_t s = li.line_start(i);
             size_t e = (i + 1 < n) ? li.line_start(i + 1) : src.size();
             size_t len = std::min<size_t>(e - s, 30);
@@ -114,5 +117,7 @@ namespace kestrel
                     max_ = t;
             }
         }
+        if (progress)
+            progress(n, n);
     }
 } // namespace kestrel
