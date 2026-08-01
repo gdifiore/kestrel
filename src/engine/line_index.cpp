@@ -50,7 +50,7 @@ namespace kestrel
         }
     }
 
-    LineIndex::LineIndex(std::span<const char> buf)
+    LineIndex::LineIndex(std::span<const char> buf, ProgressCallback progress)
         : buf_size_(buf.size())
     {
         line_starts_.push_back(0);
@@ -58,7 +58,7 @@ namespace kestrel
         // Reserve space - estimate ~100 chars per line for better performance
         line_starts_.reserve(buf.size() / 100 + 1);
 
-        scan_for_newlines(buf);
+        scan_for_newlines(buf, progress);
 
         // Trim phantom trailing line when buffer ends with '\n'.
         if (line_starts_.size() > 1 && line_starts_.back() == buf_size_)
@@ -83,8 +83,30 @@ namespace kestrel
             line_starts_.pop_back();
     }
 
-    void LineIndex::scan_for_newlines(std::span<const char> buf)
+    void LineIndex::scan_for_newlines(std::span<const char> buf, const ProgressCallback &progress)
     {
+        // Progress requires predictable cancellation points. Process large
+        // buffers in bounded batches; large buffers retain parallel scanning.
+        if (progress)
+        {
+            if (buf.size() >= PARALLEL_THRESHOLD)
+            {
+                scan_for_newlines_parallel(buf, progress);
+                return;
+            }
+            constexpr std::size_t CHUNK = 1024 * 1024;
+            for (std::size_t start = 0; start < buf.size(); start += CHUNK)
+            {
+                const std::size_t size = std::min(CHUNK, buf.size() - start);
+                std::vector<std::size_t> offs = scan_chunk(buf.data() + start, size);
+                line_starts_.reserve(line_starts_.size() + offs.size());
+                for (std::size_t off : offs)
+                    line_starts_.push_back(start + off);
+                if (!progress(start + size, buf.size()))
+                    throw LoadCancelled();
+            }
+            return;
+        }
         if (buf.size() >= PARALLEL_THRESHOLD)
         {
             scan_for_newlines_parallel(buf);
@@ -129,6 +151,46 @@ namespace kestrel
             const std::size_t base = t * chunk;
             for (std::size_t off : parts[t])
                 line_starts_.push_back(base + off);
+        }
+    }
+
+    void LineIndex::scan_for_newlines_parallel(std::span<const char> buf,
+                                                const ProgressCallback &progress)
+    {
+        unsigned n = std::thread::hardware_concurrency();
+        if (n == 0)
+            n = 2;
+        n = std::min(n, 8U);
+
+        // Keep the existing parallel speedup while reporting/cancelling every
+        // bounded batch (at most 8 MiB), rather than waiting for one huge scan.
+        constexpr std::size_t CHUNK = 1024 * 1024;
+        for (std::size_t batch = 0; batch < buf.size(); batch += CHUNK * n)
+        {
+            std::vector<std::future<std::vector<std::size_t>>> futs;
+            std::vector<std::size_t> starts;
+            futs.reserve(n);
+            starts.reserve(n);
+            for (unsigned t = 0; t < n; ++t)
+            {
+                const std::size_t start = batch + t * CHUNK;
+                if (start >= buf.size())
+                    break;
+                const std::size_t size = std::min(CHUNK, buf.size() - start);
+                starts.push_back(start);
+                futs.push_back(std::async(std::launch::async, scan_chunk,
+                                          buf.data() + start, size));
+            }
+            for (std::size_t t = 0; t < futs.size(); ++t)
+            {
+                std::vector<std::size_t> offsets = futs[t].get();
+                line_starts_.reserve(line_starts_.size() + offsets.size());
+                for (std::size_t offset : offsets)
+                    line_starts_.push_back(starts[t] + offset);
+            }
+            const std::size_t completed = std::min(batch + CHUNK * n, buf.size());
+            if (!progress(completed, buf.size()))
+                throw LoadCancelled();
         }
     }
 

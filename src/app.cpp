@@ -328,6 +328,7 @@ namespace kestrel
 
             // Start async loading
             ui.file_load.loading = true;
+            ui.file_load.cancel_requested = false;
             ui.file_load.loading_path = p;
             ui.file_load.loading_error.clear();
             search.load_source_async(p);
@@ -390,6 +391,13 @@ namespace kestrel
             }
 
             search.tick(glfwGetTime());
+
+            if (ui.file_load.cancel_requested)
+            {
+                search.cancel_loading();
+                ui.file_load.cancel_requested = false;
+                ui.file_load.loading = false;
+            }
 
             if (ui.view.tail_auto_follow && search.tail_updated_last_tick() && search.has_source())
             {

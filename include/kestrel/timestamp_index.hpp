@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include "kestrel/load_progress.hpp"
 #include <span>
 #include <vector>
 
@@ -22,7 +23,10 @@ namespace kestrel
         static constexpr int64_t kNone = INT64_MIN;
 
         TimestampIndex() = default;
-        TimestampIndex(std::span<const char> source, const LineIndex &lines);
+        using ProgressCallback = kestrel::ProgressCallback;
+        TimestampIndex(std::span<const char> source, const LineIndex &lines,
+                       ProgressCallback progress = {});
+        std::size_t memory_bytes() const noexcept { return ts_.capacity() * sizeof(int64_t); }
 
         std::size_t size() const noexcept { return ts_.size(); }
         int64_t at(std::size_t line) const

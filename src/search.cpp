@@ -70,7 +70,7 @@ namespace kestrel
         // Callbacks run on the worker thread: they only stash the result. The UI
         // thread applies it in drain_results(); see the note on that method.
         worker_ = std::make_unique<SearchWorker>(
-            [this](std::shared_ptr<Source> source, std::shared_ptr<LineIndex> lines, TimestampIndex timestamps, std::string error, double load_ms, uint64_t generation)
+            [this](std::shared_ptr<Source> source, std::shared_ptr<LineIndex> lines, TimestampIndex timestamps, std::string error, bool cancelled, double load_ms, uint64_t generation)
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 pending_ = PendingResult{};
@@ -80,6 +80,7 @@ namespace kestrel
                 pending_.lines = std::move(lines);
                 pending_.timestamps = std::move(timestamps);
                 pending_.error = std::move(error);
+                pending_.cancelled = cancelled;
                 pending_.ms = load_ms;
                 pending_.generation = generation;
             },
@@ -255,6 +256,7 @@ namespace kestrel
             pending_ = PendingResult{}; // drop any result from a prior source/scan
             loading_ = true;
             loading_error_.clear();
+            load_progress_ = std::make_shared<SearchWorker::LoadProgress>();
             search_generation_ = generation; // invalidate in-flight scans for the old source
             load_generation_ = generation;
             job_pending_ = true;
@@ -268,6 +270,7 @@ namespace kestrel
             .source = {},
             .lines = {},
             .generation = generation,
+            .load_progress = load_progress_,
         };
         worker_->submit_job(std::move(job));
     }
@@ -282,6 +285,30 @@ namespace kestrel
     {
         std::lock_guard<std::mutex> lock(mutex_);
         return loading_error_;
+    }
+
+    SearchController::LoadProgressSnapshot SearchController::load_progress() const noexcept
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!load_progress_)
+            return {};
+        return {load_progress_->phase.load(std::memory_order_relaxed),
+                load_progress_->completed.load(std::memory_order_relaxed),
+                load_progress_->total.load(std::memory_order_relaxed)};
+    }
+
+    void SearchController::cancel_loading()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!loading_)
+            return;
+        search_generation_ = worker_->next_generation();
+        load_generation_ = search_generation_;
+        loading_ = false;
+        job_pending_ = false;
+        pending_ = PendingResult{};
+        if (load_progress_)
+            load_progress_->phase.store(SearchWorker::LoadPhase::Cancelled, std::memory_order_relaxed);
     }
 
     void SearchController::clear_source()
@@ -434,6 +461,7 @@ namespace kestrel
             .source = source_, // shared ownership keeps Source alive
             .lines = lines_,
             .generation = generation,
+            .load_progress = {},
         };
         worker_->submit_job(std::move(job));
     }
@@ -462,6 +490,13 @@ namespace kestrel
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (r.generation != load_generation_)
                     return;
+            }
+            if (r.cancelled)
+            {
+                // Cancellation keeps the current source visible and still
+                // invalidates UI caches that watch completion generation.
+                completed_generation_.fetch_add(1, std::memory_order_release);
+                return;
             }
             if (r.error.empty())
             {

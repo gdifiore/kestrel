@@ -21,9 +21,31 @@ namespace kestrel
         constexpr float TWO_PI = 2.0F * 3.14159F;
         constexpr int SPINNER_DOTS = 12;
 
-        void draw_loading_spinner(const std::string &loading_path, const std::string &loading_error)
+        void draw_loading_spinner(UiInputs &in, const SearchController &search)
         {
-            ImGui::Text("Loading file: %s", loading_path.c_str());
+            ImGui::Text("Loading file: %s", in.file_load.loading_path.c_str());
+
+            const auto progress = search.load_progress();
+            const char *phase = progress.phase == SearchWorker::LoadPhase::IndexingLines ? "Indexing lines" :
+                                progress.phase == SearchWorker::LoadPhase::IndexingTimestamps ? "Indexing timestamps" :
+                                "Opening file";
+            if (progress.total > 0)
+            {
+                const float fraction = std::min(1.0F, static_cast<float>(progress.completed) /
+                                                           static_cast<float>(progress.total));
+                ImGui::TextDisabled("%s  %zu / %zu", phase, progress.completed, progress.total);
+                // Use the theme's button color instead of ImGui's yellow
+                // histogram default, so progress belongs to the active theme.
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+                                      ImGui::GetStyleColorVec4(ImGuiCol_Button));
+                ImGui::ProgressBar(fraction, ImVec2(-120.0F, 0.0F));
+                ImGui::PopStyleColor();
+            }
+            else
+                ImGui::TextDisabled("%s…", phase);
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel loading"))
+                in.file_load.cancel_requested = true;
 
             static float spinner_angle = 0.0F;
             spinner_angle += 0.1F;
@@ -51,9 +73,9 @@ namespace kestrel
 
             ImGui::Dummy(ImVec2(40, 20));
 
-            if (!loading_error.empty())
+            if (!in.file_load.loading_error.empty())
             {
-                ImGui::TextColored(ImVec4(1.0F, 0.4F, 0.4F, 1.0F), "Error: %s", loading_error.c_str());
+                ImGui::TextColored(ImVec4(1.0F, 0.4F, 0.4F, 1.0F), "Error: %s", in.file_load.loading_error.c_str());
             }
         }
 
@@ -610,7 +632,7 @@ namespace kestrel
 
             if (in.file_load.loading)
             {
-                draw_loading_spinner(in.file_load.loading_path, in.file_load.loading_error);
+                draw_loading_spinner(in, search);
             }
             else if (!has_source || source_bytes.empty())
             {

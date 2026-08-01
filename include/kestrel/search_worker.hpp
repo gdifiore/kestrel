@@ -1,6 +1,7 @@
 #pragma once
 
 #include "kestrel/line_index.hpp"
+#include "kestrel/load_progress.hpp"
 #include "kestrel/scanner.hpp"
 #include "kestrel/source.hpp"
 #include "kestrel/timestamp_index.hpp"
@@ -23,6 +24,8 @@ namespace kestrel
     class SearchWorker
     {
     public:
+        using LoadPhase = kestrel::LoadPhase;
+        using LoadProgress = kestrel::LoadProgress;
         // Work submitted to background worker thread
         enum class JobType
         {
@@ -39,6 +42,7 @@ namespace kestrel
             std::shared_ptr<const Source> source; // For search jobs - keeps mmap alive
             std::shared_ptr<const LineIndex> lines; // For search jobs - shared, avoids copying the index
             uint64_t generation = 0;              // For cancellation when newer job arrives
+            std::shared_ptr<LoadProgress> load_progress;
         };
 
         // Results from completed background operations
@@ -57,7 +61,7 @@ namespace kestrel
             std::string file_path;
         };
 
-        using LoadCallback = std::function<void(std::shared_ptr<Source>, std::shared_ptr<LineIndex>, TimestampIndex, std::string, double, uint64_t)>;
+        using LoadCallback = std::function<void(std::shared_ptr<Source>, std::shared_ptr<LineIndex>, TimestampIndex, std::string, bool, double, uint64_t)>;
         using SearchCallback = std::function<void(std::vector<Match> &&, std::vector<std::size_t> &&, std::string &&, double, uint64_t)>;
 
     public:
@@ -75,6 +79,19 @@ namespace kestrel
         std::optional<Job> extract_job();
         void process_load_job(const Job &job);
         void process_search_job(const Job &job);
+        bool is_current(const Job &job) const noexcept;
+        void set_load_progress(const Job &job, LoadPhase phase,
+                               std::size_t completed, std::size_t total) const;
+
+        struct LoadOutcome
+        {
+            std::shared_ptr<Source> source;
+            std::shared_ptr<LineIndex> lines;
+            TimestampIndex timestamps;
+            std::string error;
+            bool cancelled = false;
+        };
+        LoadOutcome build_load(const Job &job);
 
         LoadCallback load_callback_;
         SearchCallback search_callback_;

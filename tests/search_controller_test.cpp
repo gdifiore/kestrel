@@ -200,6 +200,22 @@ TEST_CASE("clear_source cancels the visible loading state")
     CHECK_FALSE(sc.has_source());
 }
 
+TEST_CASE("cancel_loading invalidates an asynchronous load")
+{
+    TempFile tf("foo\n");
+    SearchController sc;
+
+    sc.load_source_async(tf.str());
+    REQUIRE(sc.is_loading());
+    sc.cancel_loading();
+
+    CHECK_FALSE(sc.is_loading());
+    CHECK(sc.load_progress().phase == kestrel::SearchWorker::LoadPhase::Cancelled);
+    // The worker may already be unwinding, but its stale result must not land.
+    sc.tick(1.0);
+    CHECK_FALSE(sc.has_source());
+}
+
 TEST_CASE("empty pattern clears matches on rescan")
 {
     TempFile tf("foo\n");

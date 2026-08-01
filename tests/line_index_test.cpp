@@ -134,3 +134,17 @@ TEST_CASE("append extends an index without retaining a phantom trailing line")
     CHECK(li.line_start(1) == 4);
     CHECK(li.line_start(2) == 8);
 }
+
+TEST_CASE("progress callback can cancel parallel line indexing")
+{
+    std::string buf(4 * 1024 * 1024, 'x');
+    buf.back() = '\n';
+    bool reported = false;
+    CHECK_THROWS_AS(LineIndex(view(buf), [&](std::size_t done, std::size_t total)
+                              {
+                                  reported = done == total;
+                                  return false;
+                              }),
+                    kestrel::LoadCancelled);
+    CHECK(reported);
+}
