@@ -74,9 +74,9 @@ For an AddressSanitizer build, configure with `-DKESTREL_ENABLE_ASAN=ON`.
 ## Releases
 
 Pushing a semantic-version tag (for example, `v1.2.3`) builds, tests, and
-publishes Linux, Intel macOS, and Apple Silicon macOS release archives. Each
-archive contains the files that belong under `/usr/local`, including the
-executable, font, and icon assets.
+publishes Linux and Apple Silicon macOS release archives. Each archive contains
+the files that belong under `/usr/local`, including the executable, font, and
+icon assets.
 
 ```bash
 git tag v1.2.3

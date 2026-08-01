@@ -20,9 +20,6 @@ jobs:
           - runner: ubuntu-latest
             platform: linux-x86_64
             archive_extension: tar.gz
-          - runner: macos-13
-            platform: macos-x86_64
-            archive_extension: tar.gz
           - runner: macos-14
             platform: macos-arm64
             archive_extension: tar.gz
