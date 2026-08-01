@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include <hs.h>
+#include <algorithm>
 #include <climits>
 #include <string>
 #include <string_view>
@@ -42,7 +43,10 @@ namespace kestrel
         flags |= HS_FLAG_SOM_LEFTMOST;
 
         hs_compile_error_t *cerr = nullptr;
-        hs_error_t rc = hs_compile(pat.c_str(), flags, HS_MODE_BLOCK, nullptr, &db_, &cerr);
+        // Vectored mode has the same whole-buffer semantics as block mode, but
+        // lets a mapped file larger than the 32-bit hs_scan length limit be
+        // supplied as multiple contiguous segments.
+        hs_error_t rc = hs_compile(pat.c_str(), flags, HS_MODE_VECTORED, nullptr, &db_, &cerr);
 
         if (rc != HS_SUCCESS)
         {
@@ -88,20 +92,25 @@ namespace kestrel
         out.reserve(buf.size() / 10240 + 100);
         ScanCtx ctx{&out, cancel_counter, my_gen};
 
-        // hs_scan's length is unsigned int (4 GB cap). Clip and warn so larger
-        // inputs fail visibly instead of silently truncating via narrowing.
-        // TODO: replace with hs_scan_vector to handle >4 GB inputs.
-        std::size_t len = buf.size();
-        if (len > UINT_MAX)
+        // hs_scan_vector takes 32-bit segment lengths, not a 32-bit total.
+        // Split only when necessary so ordinary scans retain a single segment.
+        std::vector<const char *> data;
+        std::vector<unsigned int> lengths;
+        data.reserve(buf.size() / UINT_MAX + 1);
+        lengths.reserve(buf.size() / UINT_MAX + 1);
+        std::size_t offset = 0;
+        do
         {
-            spdlog::warn("scan input {} bytes exceeds hs_scan 4 GB limit; "
-                         "scanning first {} bytes only",
-                         len, UINT_MAX);
-            len = UINT_MAX;
-        }
+            const std::size_t remaining = buf.size() - offset;
+            const auto length = static_cast<unsigned int>(std::min(remaining, static_cast<std::size_t>(UINT_MAX)));
+            data.push_back(buf.data() + offset);
+            lengths.push_back(length);
+            offset += length;
+        } while (offset < buf.size());
 
-        hs_error_t rc = hs_scan(db_, buf.data(), static_cast<unsigned int>(len),
-                                0, scratch_, on_match, &ctx);
+        hs_error_t rc = hs_scan_vector(db_, data.data(), lengths.data(),
+                                       static_cast<unsigned int>(data.size()),
+                                       0, scratch_, on_match, &ctx);
 
         // HS_SCAN_TERMINATED means our callback returned non-zero (cancellation).
         // Treat as a normal early return; caller will discard stale results.
