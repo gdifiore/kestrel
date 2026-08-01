@@ -139,8 +139,7 @@ target_compile_definitions(kestrel PRIVATE
 )
 target_compile_options(kestrel PRIVATE
     -Wall -Wextra -Wpedantic
-    -mavx2
-    $<$<CONFIG:Release>:-O3 -march=native>
+    $<$<CONFIG:Release>:-O3>
 )
 
 enable_testing()
