@@ -366,6 +366,8 @@ namespace kestrel
                 flags |= HS_FLAG_MULTILINE;
 
             search.set_pattern(ui.search.query, flags);
+            search.set_tail_mode(ui.view.tail_mode);
+            search.set_tail_paused(ui.view.tail_paused);
 
             if (ui.view.highlight_groups)
             {
@@ -388,6 +390,16 @@ namespace kestrel
             }
 
             search.tick(glfwGetTime());
+
+            if (ui.view.tail_auto_follow && search.tail_updated_last_tick() && search.has_source())
+            {
+                const auto &lines = search.line_index();
+                if (lines.line_count() > 0)
+                {
+                    ui.cursor.line = lines.line_count() - 1;
+                    ui.cursor.offset = lines.line_start(ui.cursor.line);
+                }
+            }
 
             // Update loading state from SearchController
             bool was_loading = ui.file_load.loading;

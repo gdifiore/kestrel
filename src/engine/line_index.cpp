@@ -63,6 +63,24 @@ namespace kestrel
         // Trim phantom trailing line when buffer ends with '\n'.
         if (line_starts_.size() > 1 && line_starts_.back() == buf_size_)
             line_starts_.pop_back();
+        ends_with_newline_ = buf_size_ > 0 && buf.back() == '\n';
+    }
+
+    void LineIndex::append(std::span<const char> full_buf)
+    {
+        if (full_buf.size() <= buf_size_)
+            return;
+
+        if (ends_with_newline_)
+            line_starts_.push_back(buf_size_);
+        for (std::size_t i = buf_size_; i < full_buf.size(); ++i)
+            if (full_buf[i] == '\n')
+                line_starts_.push_back(i + 1);
+
+        buf_size_ = full_buf.size();
+        ends_with_newline_ = full_buf.back() == '\n';
+        if (ends_with_newline_ && line_starts_.size() > 1 && line_starts_.back() == buf_size_)
+            line_starts_.pop_back();
     }
 
     void LineIndex::scan_for_newlines(std::span<const char> buf)

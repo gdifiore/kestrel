@@ -4,7 +4,13 @@
 
 #include <algorithm>
 #include <chrono>
+#include <array>
+#include <cerrno>
+#include <filesystem>
 #include <thread>
+
+#include <sys/inotify.h>
+#include <unistd.h>
 
 namespace kestrel
 {
@@ -93,7 +99,127 @@ namespace kestrel
 
     SearchController::~SearchController()
     {
+        if (inotify_fd_ != -1)
+            close(inotify_fd_);
         worker_.reset();
+    }
+
+    void SearchController::set_tail_mode(bool on)
+    {
+        if (tail_mode_ == on)
+            return;
+        tail_mode_ = on;
+        tail_needs_refresh_ = false;
+        if (tail_mode_)
+            reset_tail_watch();
+        else if (inotify_fd_ != -1)
+        {
+            close(inotify_fd_);
+            inotify_fd_ = -1;
+            inotify_watch_ = -1;
+        }
+    }
+
+    void SearchController::reset_tail_watch()
+    {
+        if (inotify_fd_ != -1)
+        {
+            close(inotify_fd_);
+            inotify_fd_ = -1;
+            inotify_watch_ = -1;
+        }
+        if (!tail_mode_ || !source_ || source_->path().empty())
+            return;
+
+        inotify_fd_ = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+        if (inotify_fd_ == -1)
+        {
+            spdlog::warn("inotify_init1 for follow mode failed: {}", std::strerror(errno));
+            return;
+        }
+        const std::filesystem::path file(source_->path());
+        const std::string parent = file.parent_path().empty() ? "." : file.parent_path().string();
+        constexpr uint32_t mask = IN_CLOSE_WRITE | IN_MODIFY | IN_ATTRIB |
+                                  IN_CREATE | IN_MOVED_TO | IN_DELETE | IN_MOVE_SELF;
+        inotify_watch_ = inotify_add_watch(inotify_fd_, parent.c_str(), mask);
+        if (inotify_watch_ == -1)
+        {
+            spdlog::warn("inotify_add_watch for '{}' failed: {}", parent, std::strerror(errno));
+            close(inotify_fd_);
+            inotify_fd_ = -1;
+        }
+    }
+
+    void SearchController::consume_tail_events(double now_sec)
+    {
+        if (!tail_mode_ || inotify_fd_ == -1 || !source_)
+            return;
+
+        const std::filesystem::path file(source_->path());
+        const std::string name = file.filename().string();
+        std::array<char, 4096> bytes{};
+        bool changed = false;
+        while (true)
+        {
+            const ssize_t count = read(inotify_fd_, bytes.data(), bytes.size());
+            if (count <= 0)
+            {
+                if (count == -1 && errno != EAGAIN && errno != EWOULDBLOCK)
+                    spdlog::warn("inotify read failed: {}", std::strerror(errno));
+                break;
+            }
+            for (char *p = bytes.data(), *end = bytes.data() + count; p < end;)
+            {
+                const auto *event = reinterpret_cast<const inotify_event *>(p);
+                if ((event->mask & IN_Q_OVERFLOW) ||
+                    (event->len > 0 && name == event->name))
+                    changed = true;
+                p += sizeof(inotify_event) + event->len;
+            }
+        }
+
+        tail_needs_refresh_ = tail_needs_refresh_ || changed;
+        if (!tail_paused_ && tail_needs_refresh_)
+            reload_tail_source(now_sec);
+    }
+
+    void SearchController::reload_tail_source(double now_sec)
+    {
+        if (!source_ || source_->path().empty())
+            return;
+        try
+        {
+            auto next_source = std::make_shared<Source>(Source::from_path(source_->path()));
+
+            // Never mutate lines_ in place: an older Search job may retain it.
+            // Do not infer an append from the file size or compare the previous
+            // mmap at refresh time: an in-place rewrite can update that mapping
+            // too. Rebuild so rotation and truncate-and-rewrite are correct.
+            const auto new_bytes = next_source->bytes();
+            auto next_lines = std::make_shared<LineIndex>(new_bytes);
+
+            source_ = std::move(next_source);
+            lines_ = std::move(next_lines);
+            ts_index_ = TimestampIndex(source_->bytes(), *lines_);
+            tail_needs_refresh_ = false;
+            tail_updated_ = true;
+
+            // Cancel work against the old mmap and immediately schedule a
+            // fresh whole-file scan. Stream mode remains deliberately absent:
+            // the benchmark shows its throughput potential, but it needs a
+            // separate result model to preserve highlight semantics.
+            std::lock_guard<std::mutex> lock(mutex_);
+            search_generation_ = worker_->next_generation();
+            dirty_ = true;
+            last_edit_sec_ = now_sec - static_cast<double>(debounce_ms_) / 1000.0;
+            completed_generation_.fetch_add(1, std::memory_order_release);
+        }
+        catch (const SourceError &e)
+        {
+            // Rotation briefly leaves no path to map. Keep the pending marker;
+            // a later directory event will retry without losing the snapshot.
+            spdlog::warn("follow reload failed: {}", e.what());
+        }
     }
 
     void SearchController::load_source(std::string_view path)
@@ -116,6 +242,7 @@ namespace kestrel
         loading_ = false;
         loading_error_.clear();
         completed_generation_.fetch_add(1, std::memory_order_release);
+        reset_tail_watch();
     }
 
     void SearchController::load_source_async(std::string_view path)
@@ -175,6 +302,7 @@ namespace kestrel
         loading_ = false;
         loading_error_.clear();
         completed_generation_.fetch_add(1, std::memory_order_release);
+        reset_tail_watch();
     }
 
     std::span<const char> SearchController::source_bytes() const
@@ -203,6 +331,8 @@ namespace kestrel
     // Submit new jobs after debounce timeout (first tick stamps time, second submits)
     void SearchController::tick(double now_sec)
     {
+        tail_updated_ = false;
+        consume_tail_events(now_sec);
         // Apply any worker result first, on this (UI) thread.
         drain_results();
 
@@ -349,6 +479,7 @@ namespace kestrel
 
                 std::lock_guard<std::mutex> lock(mutex_);
                 dirty_ = false;
+                reset_tail_watch();
             }
             else
             {

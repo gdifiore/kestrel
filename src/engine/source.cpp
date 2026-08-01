@@ -24,8 +24,9 @@ namespace kestrel
     Source Source::from_path(std::string_view path)
     {
         Source s;
+        s.path_ = std::string(path);
 
-        int fd = open(std::string(path).c_str(), O_RDONLY);
+        int fd = open(s.path_.c_str(), O_RDONLY);
         if (fd == -1)
             throw_errno("open");
 
@@ -62,7 +63,7 @@ namespace kestrel
     }
 
     Source::Source(Source &&obj) noexcept
-        : data_(obj.data_), size_(obj.size_)
+        : data_(obj.data_), size_(obj.size_), path_(std::move(obj.path_))
     {
         obj.data_ = nullptr;
         obj.size_ = 0;
@@ -75,6 +76,7 @@ namespace kestrel
             release();
             data_ = obj.data_;
             size_ = obj.size_;
+            path_ = std::move(obj.path_);
 
             obj.data_ = nullptr;
             obj.size_ = 0;

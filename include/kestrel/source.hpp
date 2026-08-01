@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -25,12 +26,15 @@ namespace kestrel
             return {data_, size_};
         }
 
+        const std::string &path() const noexcept { return path_; }
+
     private:
         Source() = default;
         void release() noexcept;
 
         const char *data_ = nullptr;
         std::size_t size_ = 0;
+        std::string path_;
     };
 
     class SourceError : public std::runtime_error

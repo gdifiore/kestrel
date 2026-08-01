@@ -17,3 +17,5 @@ poc/**
 docs/**
 buildandrun.sh
 *.xcf
+benchmarks/**
+scripts/**
