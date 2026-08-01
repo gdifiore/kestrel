@@ -3,6 +3,7 @@
 #include "kestrel/search.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 
@@ -10,6 +11,17 @@
 
 namespace kestrel
 {
+
+    static void remember_query(UiInputs &in)
+    {
+        const std::string query(in.search.query);
+        if (query.empty())
+            return;
+        std::erase(in.search.history, query);
+        in.search.history.insert(in.search.history.begin(), query);
+        if (in.search.history.size() > 10)
+            in.search.history.resize(10);
+    }
 
     static void draw_query_input(UiInputs &in)
     {
@@ -29,74 +41,42 @@ namespace kestrel
             std::memcpy(query_backup, in.search.query, sizeof(in.search.query));
         }
 
-        ImGui::InputTextWithHint("##query", "search...", in.search.query, IM_ARRAYSIZE(in.search.query));
+        const bool submitted = ImGui::InputTextWithHint(
+            "##query", "Search regular expression…", in.search.query,
+            IM_ARRAYSIZE(in.search.query), ImGuiInputTextFlags_EnterReturnsTrue);
 
         if (esc_pressed && ImGui::IsItemDeactivated())
         {
             std::memcpy(in.search.query, query_backup, sizeof(in.search.query));
         }
+        if (submitted)
+            remember_query(in);
     }
 
-    static void draw_toolbar(UiInputs &in, const SearchController &search)
+    static void draw_time_range(UiInputs &in, const SearchController &search);
+
+    static void draw_search_options(UiInputs &in, const SearchController &search)
     {
-        ImGui::Checkbox("Aa", &in.search.case_sensitive);
-        if (ImGui::IsItemHovered())
-        {
-            ImGui::SetTooltip("Case sensitive");
-        }
+        if (!ImGui::BeginPopup("search_options"))
+            return;
 
-        ImGui::SameLine();
-        ImGui::Checkbox(".*", &in.search.dotall);
+        ImGui::TextUnformatted("Regex options");
+        ImGui::Separator();
+        ImGui::Checkbox("Smart case", &in.search.smart_case);
         if (ImGui::IsItemHovered())
-        {
+            ImGui::SetTooltip("Uppercase letters make a pattern case-sensitive");
+        ImGui::BeginDisabled(in.search.smart_case);
+        ImGui::Checkbox("Case sensitive", &in.search.case_sensitive);
+        ImGui::EndDisabled();
+        ImGui::Checkbox("Dot matches newlines", &in.search.dotall);
+        if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Dot matches newlines\n(. matches \\n and all characters)");
-        }
-
-        ImGui::SameLine();
-        ImGui::Checkbox("^$", &in.search.multiline);
+        ImGui::Checkbox("Multiline anchors", &in.search.multiline);
         if (ImGui::IsItemHovered())
-        {
             ImGui::SetTooltip("Multiline anchors\n(^ and $ match line boundaries)");
-        }
-
-        ImGui::SameLine();
-        ImGui::Text("%d before", in.layout.matches_before);
-        if (ImGui::IsItemHovered())
-        {
-            ImGui::SetTooltip("Matches before cursor");
-        }
-
-        ImGui::SameLine();
-        ImGui::Text("%d after", in.layout.matches_after);
-        if (ImGui::IsItemHovered())
-        {
-            ImGui::SetTooltip("Matches after cursor");
-        }
-
-        ImGui::SameLine();
-        ImGui::TextDisabled("|");
-        ImGui::SameLine();
-        ImGui::Text("%zu matches", search.matches().size());
-        ImGui::SameLine();
-        ImGui::TextDisabled("%.2f ms", search.last_scan_ms());
-
-        ImGui::SameLine();
-        ImGui::ColorEdit4("match", &in.view.color_match.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
-        ImGui::SameLine();
-        ImGui::TextUnformatted("match");
-
-        ImGui::SameLine();
-        ImGui::ColorEdit4("cursor", &in.view.color_scope.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
-        ImGui::SameLine();
-        ImGui::TextUnformatted("cursor");
-
-        ImGui::SameLine();
-        ImGui::Checkbox("line #", &in.view.show_line_nums);
-
-        if (!search.compile_error().empty())
-        {
-            ImGui::TextColored(ImVec4(1.0F, 0.35F, 0.35F, 1.0F), "%s", search.compile_error().c_str());
-        }
+        ImGui::SeparatorText("Time range");
+        draw_time_range(in, search);
+        ImGui::EndPopup();
     }
 
     static void format_time_label(int64_t epoch, bool include_date, char *out, size_t cap)
@@ -121,13 +101,7 @@ namespace kestrel
         {
             return;
         }
-        // Needs ~500px for checkbox + two 200px sliders. Skip if remaining
-        // toolbar width can't hold them, so widgets don't wrap/overflow.
         const float s = ui_scale();
-        if (ImGui::GetContentRegionAvail().x < 500.0F * s)
-        {
-            return;
-        }
 
         auto &tf = in.layout.filters.time;
 
@@ -140,9 +114,6 @@ namespace kestrel
             tf.end = ts.max_ts();
         }
 
-        ImGui::SameLine();
-        ImGui::TextDisabled("|");
-        ImGui::SameLine();
         ImGui::Checkbox("time", &tf.active);
         if (!tf.active)
         {
@@ -156,17 +127,15 @@ namespace kestrel
 
         int64_t lo = ts.min_ts();
         int64_t hi = ts.max_ts();
-        ImGui::SameLine();
         ImGui::SetNextItemWidth(200.0F * s);
         ImGui::SliderScalar("##ts_start", ImGuiDataType_S64,
                             &tf.start, &lo, &tf.end, sbuf);
-        ImGui::SameLine();
         ImGui::SetNextItemWidth(200.0F * s);
         ImGui::SliderScalar("##ts_end", ImGuiDataType_S64,
                             &tf.end, &tf.start, &hi, ebuf);
     }
 
-    void draw_search_bar(UiInputs &in, const SearchController &)
+    void draw_search_bar(UiInputs &in, const SearchController &search)
     {
         ImGuiViewport *vp = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, vp->WorkPos.y));
@@ -181,18 +150,61 @@ namespace kestrel
 
         if (ImGui::Begin("##search_bar", nullptr, flags))
         {
-            const float gear_w = ImGui::CalcTextSize(" * ").x + ImGui::GetStyle().FramePadding.x * 2.0F;
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - gear_w - ImGui::GetStyle().ItemSpacing.x);
+            const ImGuiStyle &style = ImGui::GetStyle();
+            const auto button_width = [&style](const char *label)
+            { return ImGui::CalcTextSize(label).x + style.FramePadding.x * 2.0F; };
+            const float controls_width = button_width("Clear") + button_width("Options") +
+                                         button_width("Patterns") + std::max(button_width("Pin"), button_width("Unpin")) +
+                                         style.ItemSpacing.x * 4.0F;
+            ImGui::SetNextItemWidth(std::max(120.0F * ui_scale(), ImGui::GetContentRegionAvail().x - controls_width));
             draw_query_input(in);
             ImGui::SameLine();
-            if (ImGui::Button(" * "))
+            if (ImGui::Button("Clear"))
             {
-                in.show_settings = !in.show_settings;
+                in.search.query[0] = '\0';
             }
             if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Clear search (Ctrl+L)");
+            ImGui::SameLine();
+            if (ImGui::Button("Options"))
+                ImGui::OpenPopup("search_options");
+            draw_search_options(in, search);
+            ImGui::SameLine();
+            if (ImGui::BeginCombo("##patterns", "Patterns"))
             {
-                ImGui::SetTooltip("Settings");
+                if (!in.search.pinned_queries.empty())
+                {
+                    ImGui::TextDisabled("Pinned");
+                    for (const std::string &query : in.search.pinned_queries)
+                    {
+                        if (ImGui::Selectable(query.c_str()))
+                            std::snprintf(in.search.query, sizeof(in.search.query), "%s", query.c_str());
+                    }
+                    ImGui::Separator();
+                }
+                ImGui::TextDisabled("Recent this session");
+                for (const std::string &query : in.search.history)
+                {
+                    if (ImGui::Selectable(query.c_str()))
+                        std::snprintf(in.search.query, sizeof(in.search.query), "%s", query.c_str());
+                }
+                ImGui::EndCombo();
             }
+            ImGui::SameLine();
+            const std::string query(in.search.query);
+            const bool pinned = std::find(in.search.pinned_queries.begin(), in.search.pinned_queries.end(), query) != in.search.pinned_queries.end();
+            ImGui::BeginDisabled(query.empty());
+            if (ImGui::Button(pinned ? "Unpin" : "Pin"))
+            {
+                if (pinned)
+                    std::erase(in.search.pinned_queries, query);
+                else
+                    in.search.pinned_queries.push_back(query);
+            }
+            ImGui::EndDisabled();
+
+            if (!search.compile_error().empty())
+                ImGui::TextColored(ImVec4(1.0F, 0.35F, 0.35F, 1.0F), "%s", search.compile_error().c_str());
             in.layout.search_bar_h = ImGui::GetWindowHeight();
         }
         ImGui::End();
@@ -200,24 +212,8 @@ namespace kestrel
 
     void draw_toolbar_row(UiInputs &in, const SearchController &search)
     {
-        ImGuiViewport *vp = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, vp->WorkPos.y + in.layout.search_bar_h));
-        ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, 0));
-
-        ImGuiWindowFlags flags =
-            ImGuiWindowFlags_NoDecoration |
-            ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoSavedSettings |
-            ImGuiWindowFlags_NoFocusOnAppearing |
-            ImGuiWindowFlags_NoBringToFrontOnFocus;
-
-        if (ImGui::Begin("##toolbar", nullptr, flags))
-        {
-            draw_toolbar(in, search);
-            draw_time_range(in, search);
-            in.layout.toolbar_h = ImGui::GetWindowHeight();
-        }
-        ImGui::End();
+        (void)search;
+        in.layout.toolbar_h = 0.0F;
     }
 
 } // namespace kestrel

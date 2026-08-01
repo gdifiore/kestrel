@@ -350,10 +350,15 @@ namespace kestrel
             draw_ui(ui, search);
             w.end_frame(); });
         load_config(ui);
+        if (!ui.view.is_dark_mode)
+            ImGui::StyleColorsLight();
         while (!w.should_close() && !ui.quit_requested)
         {
             unsigned flags = 0;
-            if (!ui.search.case_sensitive)
+            const bool has_uppercase = std::any_of(ui.search.query, ui.search.query + std::strlen(ui.search.query),
+                                                   [](unsigned char c) { return c >= 'A' && c <= 'Z'; });
+            const bool case_sensitive = ui.search.smart_case ? has_uppercase : ui.search.case_sensitive;
+            if (!case_sensitive)
                 flags |= HS_FLAG_CASELESS;
             if (ui.search.dotall)
                 flags |= HS_FLAG_DOTALL;

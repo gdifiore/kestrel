@@ -111,12 +111,24 @@ namespace kestrel
 
                 if (key == "case_sensitive")
                     (void)parse_bool(val, in.search.case_sensitive);
+                else if (key == "smart_case")
+                    (void)parse_bool(val, in.search.smart_case);
                 else if (key == "dotall")
                     (void)parse_bool(val, in.search.dotall);
                 else if (key == "multiline")
                     (void)parse_bool(val, in.search.multiline);
                 else if (key == "show_line_nums")
                     (void)parse_bool(val, in.view.show_line_nums);
+                else if (key == "show_minimap")
+                    (void)parse_bool(val, in.view.show_minimap);
+                else if (key == "highlight_groups")
+                    (void)parse_bool(val, in.view.highlight_groups);
+                else if (key == "display_only_filtered_lines")
+                    (void)parse_bool(val, in.view.display_only_filtered_lines);
+                else if (key == "is_dark_mode")
+                    (void)parse_bool(val, in.view.is_dark_mode);
+                else if (key == "log_level_tint")
+                    (void)parse_bool(val, in.view.log_level_tint);
                 else if (key == "snap_scroll")
                     (void)parse_bool(val, in.view.snap_scroll);
                 else if (key == "vim_mode")
@@ -129,6 +141,10 @@ namespace kestrel
                 {
                     // Parse recent_file_0, recent_file_1, etc.
                     in.file_prefs.recent_files.emplace_back(val);
+                }
+                else if (key.starts_with("pinned_query_"))
+                {
+                    in.search.pinned_queries.emplace_back(val);
                 }
             }
         }
@@ -151,9 +167,15 @@ namespace kestrel
         }
 
         write_bool(config, "case_sensitive", in.search.case_sensitive);
+        write_bool(config, "smart_case", in.search.smart_case);
         write_bool(config, "dotall", in.search.dotall);
         write_bool(config, "multiline", in.search.multiline);
         write_bool(config, "show_line_nums", in.view.show_line_nums);
+        write_bool(config, "show_minimap", in.view.show_minimap);
+        write_bool(config, "highlight_groups", in.view.highlight_groups);
+        write_bool(config, "display_only_filtered_lines", in.view.display_only_filtered_lines);
+        write_bool(config, "is_dark_mode", in.view.is_dark_mode);
+        write_bool(config, "log_level_tint", in.view.log_level_tint);
         write_bool(config, "snap_scroll", in.view.snap_scroll);
         write_bool(config, "vim_mode", in.view.vim_mode);
         write_color(config, "color_match", in.view.color_match);
@@ -163,6 +185,10 @@ namespace kestrel
         for (size_t i = 0; i < std::min(in.file_prefs.recent_files.size(), size_t(10)); ++i)
         {
             config << "recent_file_" << i << " = " << in.file_prefs.recent_files[i] << "\n";
+        }
+        for (size_t i = 0; i < std::min(in.search.pinned_queries.size(), size_t(10)); ++i)
+        {
+            config << "pinned_query_" << i << " = " << in.search.pinned_queries[i] << "\n";
         }
 
         config.close();

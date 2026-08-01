@@ -109,6 +109,9 @@ namespace kestrel
                     ImGui::StyleColorsLight();
                 }
             }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Settings..."))
+                in.show_settings = true;
             ImGui::EndMenu();
         }
     } // namespace
@@ -119,6 +122,12 @@ namespace kestrel
         {
             draw_file_menu(in);
             draw_view_menu(in);
+            if (ImGui::BeginMenu("Help"))
+            {
+                if (ImGui::MenuItem("Keyboard Shortcuts"))
+                    in.show_help = true;
+                ImGui::EndMenu();
+            }
             ImGui::EndMainMenuBar();
         }
 

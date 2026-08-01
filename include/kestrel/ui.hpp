@@ -38,8 +38,12 @@ namespace kestrel
     {
         char query[512] = {};
         bool case_sensitive = false;
+        bool smart_case = false;
         bool dotall = true;
         bool multiline = false;
+        // Session history plus persistent, user-pinned patterns.
+        std::vector<std::string> history;
+        std::vector<std::string> pinned_queries;
     };
 
     struct ViewPrefs
@@ -209,6 +213,7 @@ namespace kestrel
     {
         bool quit_requested = false;
         bool show_settings = false;
+        bool show_help = false;
 
         SearchInputs search;
         ViewPrefs view;

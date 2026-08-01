@@ -90,24 +90,20 @@ namespace kestrel
                 ImGui::SetTooltip("Enable vim-style navigation (j/k, gg, G, /, v, y, Ctrl+d/u)\nActive when no input widget is focused");
             }
 
-            ImGui::SeparatorText("Regex Flags");
-            ImGui::Checkbox("Case sensitive", &in.search.case_sensitive);
+            ImGui::SeparatorText("Highlights");
+            ImGui::ColorEdit4("Match color", &in.view.color_match.x, ImGuiColorEditFlags_NoInputs);
+            ImGui::ColorEdit4("Cursor color", &in.view.color_scope.x, ImGuiColorEditFlags_NoInputs);
+        }
+        ImGui::End();
+    }
 
-            ImGui::Checkbox("Dot matches newlines", &in.search.dotall);
-            if (ImGui::IsItemHovered())
-            {
-                ImGui::SetTooltip("Make . (dot) match newline characters\nPattern 'foo.*bar' can match across lines");
-            }
-
-            ImGui::Checkbox("Multiline anchors", &in.search.multiline);
-            if (ImGui::IsItemHovered())
-            {
-                ImGui::SetTooltip("Make ^ and $ match line boundaries\n^ = start of line, $ = end of line");
-            }
-
-            ImGui::SeparatorText("Keyboard Shortcuts");
+    void draw_help_popup(UiInputs &in)
+    {
+        if (!in.show_help)
+            return;
+        if (ImGui::Begin("Keyboard Shortcuts", &in.show_help, ImGuiWindowFlags_AlwaysAutoResize))
+        {
             draw_shortcuts_table();
-
             if (in.view.vim_mode)
             {
                 ImGui::SeparatorText("Vim Shortcuts");

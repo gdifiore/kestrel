@@ -20,6 +20,7 @@ namespace kestrel
         draw_results(in, search); // uses all three
         draw_minimap(in, search); // uses all three
         draw_settings_popup(in);
+        draw_help_popup(in);
         draw_open_dialog(in);
         draw_goto_line_dialog(in, search);
     }

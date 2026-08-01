@@ -63,6 +63,12 @@ namespace kestrel
                 ImGui::TextDisabled("|");
                 ImGui::SameLine();
                 ImGui::TextUnformatted(size_buf);
+                ImGui::SameLine();
+                ImGui::TextDisabled("|");
+                ImGui::SameLine();
+                ImGui::Text("%zu matches", search.matches().size());
+                ImGui::SameLine();
+                ImGui::TextDisabled("%.2f ms", search.last_scan_ms());
                 if (!in.file_load.current_path.empty())
                 {
                     ImGui::SameLine();

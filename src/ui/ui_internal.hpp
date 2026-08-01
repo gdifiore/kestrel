@@ -15,6 +15,7 @@ namespace kestrel
     void draw_minimap(UiInputs &in, const SearchController &search);
     void draw_status_bar(UiInputs &in, const SearchController &search);
     void draw_settings_popup(UiInputs &in);
+    void draw_help_popup(UiInputs &in);
     void draw_open_dialog(UiInputs &in);
     void draw_goto_line_dialog(UiInputs &in, const SearchController &search);
 
