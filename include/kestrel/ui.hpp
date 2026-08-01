@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace kestrel
@@ -172,9 +173,34 @@ namespace kestrel
         bool view_cache_filter_view = false;
     };
 
+    struct GroupSpanCacheKey
+    {
+        std::size_t start;
+        std::size_t end;
+
+        bool operator==(const GroupSpanCacheKey &) const = default;
+    };
+
+    struct GroupSpanCacheKeyHash
+    {
+        std::size_t operator()(const GroupSpanCacheKey &key) const noexcept
+        {
+            return key.start ^ (key.end + 0x9e3779b9U + (key.start << 6U) + (key.start >> 2U));
+        }
+    };
+
+    struct CachedGroupSpan
+    {
+        std::size_t start;
+        std::size_t end;
+        int index;
+    };
+
     struct GroupMatch
     {
         std::optional<GroupMatcher> group_matcher_;
+        uint64_t cache_generation = 0;
+        std::unordered_map<GroupSpanCacheKey, std::vector<CachedGroupSpan>, GroupSpanCacheKeyHash> span_cache;
     };
 
     // UI-owned state: user inputs + layout scratch. Derived/view state

@@ -193,7 +193,7 @@ namespace kestrel
             std::size_t end;
         };
 
-        void draw_group_highlights(const UiInputs &in, const GroupMatcher &gm,
+        void draw_group_highlights(UiInputs &in, const GroupMatcher &gm,
                                    std::span<const char> source_bytes, LineRowSpan row,
                                    const Match &match,
                                    ImVec2 cursor_pos, float line_height, float char_width,
@@ -209,16 +209,27 @@ namespace kestrel
             const std::size_t gm_start = single_line ? match.start : row.start;
             const std::size_t gm_end = single_line ? match.end : row.end;
 
-            thread_local std::vector<GroupMatcher::Span> group_spans;
-            thread_local std::vector<int> group_indices;
-            group_spans.clear();
-            group_indices.clear();
-            gm.match_into(source_bytes, gm_start, gm_end, group_spans, group_indices);
+            auto &cache = in.groupmatch.span_cache;
+            constexpr std::size_t CACHE_MAX = 8192;
+            if (cache.size() >= CACHE_MAX)
+                cache.clear();
+            const GroupSpanCacheKey key{gm_start, gm_end};
+            auto [it, inserted] = cache.try_emplace(key);
+            if (inserted)
+            {
+                thread_local std::vector<GroupMatcher::Span> group_spans;
+                thread_local std::vector<int> group_indices;
+                group_spans.clear();
+                group_indices.clear();
+                gm.match_into(source_bytes, gm_start, gm_end, group_spans, group_indices);
+                it->second.reserve(group_spans.size());
+                for (std::size_t i = 0; i < group_spans.size(); ++i)
+                    it->second.push_back({group_spans[i].start, group_spans[i].end, group_indices[i]});
+            }
 
             const auto &group_palette = in.view.group_colors;
-            for (std::size_t i = 0; i < group_spans.size(); ++i)
+            for (const CachedGroupSpan &g : it->second)
             {
-                const auto &g = group_spans[i];
                 if (g.end <= g.start || g.end <= row.start || g.start >= row.end)
                 {
                     continue;
@@ -228,13 +239,13 @@ namespace kestrel
 
                 ImVec2 g_min(cursor_pos.x + g_col_start * char_width, cursor_pos.y);
                 ImVec2 g_max(cursor_pos.x + g_col_end * char_width, cursor_pos.y + line_height);
-                ImVec4 col = group_palette[(group_indices[i] - 1) % palette_size];
+                ImVec4 col = group_palette[(g.index - 1) % palette_size];
                 col.w = 0.75F;
                 ImGui::GetWindowDrawList()->AddRectFilled(g_min, g_max, ImGui::GetColorU32(col));
             }
         }
 
-        void draw_match_highlights(const UiInputs &in, const SearchController &search,
+        void draw_match_highlights(UiInputs &in, const SearchController &search,
                                    std::span<const char> source_bytes, LineRowSpan row,
                                    ImVec2 cursor_pos, float line_height, float char_width)
         {
@@ -249,6 +260,11 @@ namespace kestrel
                 gm = in.groupmatch.group_matcher_ ? &*in.groupmatch.group_matcher_ : nullptr;
             }
             const bool has_groups = gm != nullptr && gm->group_count() > 0;
+            if (in.groupmatch.cache_generation != search.completed_generation())
+            {
+                in.groupmatch.span_cache.clear();
+                in.groupmatch.cache_generation = search.completed_generation();
+            }
 
             // TODO: col_start/col_end are byte offsets. Correct for ASCII;
             // breaks for multibyte UTF-8 (one codepoint spans multiple bytes).
