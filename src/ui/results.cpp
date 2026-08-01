@@ -347,20 +347,35 @@ namespace kestrel
             }
         }
 
-        void autoscroll_to_cursor(const ViewIndex &view, size_t cursor_line,
-                                  const ImGuiListClipper &clipper)
+        void autoscroll_to_cursor(const ViewIndex &view, size_t cursor_line)
         {
-            int cursor_view_pos = view.source_to_row(cursor_line);
+            const int cursor_view_pos = view.source_to_row(cursor_line);
+            if (cursor_view_pos < 0)
+                return;
 
-            if (cursor_view_pos >= 0 &&
-                (cursor_view_pos < clipper.DisplayStart ||
-                 cursor_view_pos >= clipper.DisplayEnd))
+            // ImGuiListClipper's DisplayStart/DisplayEnd describe its last
+            // iteration, not necessarily the viewport after Step() finishes.
+            // Reading them here made keyboard navigation repeatedly believe a
+            // visible cursor was off-screen and re-center on every keypress.
+            const float line_h = ImGui::GetTextLineHeightWithSpacing();
+            const float cursor_top = cursor_view_pos * line_h;
+            const float cursor_bottom = cursor_top + line_h;
+            const float visible_top = ImGui::GetScrollY();
+            const float visible_bottom = visible_top + ImGui::GetWindowHeight();
+            if (cursor_top < visible_top)
             {
-                float scroll_line_height = ImGui::GetTextLineHeightWithSpacing();
-                float target_scroll = cursor_view_pos * scroll_line_height -
-                                      (ImGui::GetWindowHeight() * 0.5F);
-                target_scroll = std::max(0.0F, target_scroll);
-                ImGui::SetScrollY(target_scroll);
+                // Follow the cursor at the viewport edge instead of centering
+                // it. Keyboard navigation then advances smoothly one row at a
+                // time as the cursor walks beyond the visible range.
+                ImGui::SetScrollY(std::max(0.0F, cursor_top));
+            }
+            else if (cursor_bottom > visible_bottom)
+            {
+                // Snap upward here (rather than relying on the frame-level
+                // floor snap) so fractional viewport heights cannot leave the
+                // active bottom row clipped by a pixel or two.
+                const float needed = cursor_bottom - ImGui::GetWindowHeight();
+                ImGui::SetScrollY(std::ceil(needed / line_h) * line_h);
             }
         }
 
@@ -462,7 +477,7 @@ namespace kestrel
                 (in.cursor.line != in.layout.last_cursor_line ||
                  in.cursor.offset != in.layout.last_cursor_offset))
             {
-                autoscroll_to_cursor(view, in.cursor.line, clipper);
+                autoscroll_to_cursor(view, in.cursor.line);
                 in.layout.last_cursor_line = in.cursor.line;
                 in.layout.last_cursor_offset = in.cursor.offset;
             }
