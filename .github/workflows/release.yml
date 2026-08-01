@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux-x86_64
+            archive_extension: tar.gz
+          - runner: macos-13
+            platform: macos-x86_64
+            archive_extension: tar.gz
+          - runner: macos-14
+            platform: macos-arm64
+            archive_extension: tar.gz
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            build-essential cmake ninja-build pkg-config ragel libboost-dev \
+            libsqlite3-dev libgl1-mesa-dev libx11-dev libxrandr-dev \
+            libxinerama-dev libxcursor-dev libxi-dev
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install boost ragel sqlite pkg-config
+
+      - name: Configure CMake
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_INSTALL_PREFIX=/usr/local
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Install release files
+        run: cmake --install build --prefix package
+
+      - name: Get version from tag
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=pr-${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release archive
+        shell: bash
+        run: |
+          archive="kestrel-${{ matrix.platform }}-${{ steps.version.outputs.value }}.${{ matrix.archive_extension }}"
+          tar -C package -czf "$archive" .
+          echo "archive=$archive" >> "$GITHUB_ENV"
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: kestrel-${{ matrix.platform }}
+          path: ${{ env.archive }}
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub release
+    needs: build-release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/*/* \
+            --generate-notes \
+            --title "Kestrel ${GITHUB_REF_NAME#v}"
