@@ -170,6 +170,8 @@ namespace kestrel
         load_generation_ = search_generation_;
         dirty_ = false;
         job_pending_ = false;
+        loading_ = false;
+        loading_error_.clear();
         completed_generation_.fetch_add(1, std::memory_order_release);
     }
 

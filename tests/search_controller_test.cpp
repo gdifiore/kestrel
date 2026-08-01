@@ -172,6 +172,21 @@ TEST_CASE("clear_source drops source and matches")
     CHECK(sc.matches().empty());
 }
 
+TEST_CASE("clear_source cancels the visible loading state")
+{
+    TempFile tf("foo\n");
+    SearchController sc;
+
+    sc.load_source_async(tf.str());
+    REQUIRE(sc.is_loading());
+
+    sc.clear_source();
+
+    CHECK_FALSE(sc.is_loading());
+    CHECK(sc.get_loading_error().empty());
+    CHECK_FALSE(sc.has_source());
+}
+
 TEST_CASE("empty pattern clears matches on rescan")
 {
     TempFile tf("foo\n");
