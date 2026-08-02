@@ -10,6 +10,10 @@ namespace kestrel
 
     bool is_valid_file_path(std::string_view path);
 
+    // Returns true when both paths resolve to the same existing filesystem
+    // object. Errors (including empty paths) are reported as false.
+    bool is_same_file_path(std::string_view lhs, std::string_view rhs);
+
     struct CliArgs
     {
         std::optional<std::string> file_path;

@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+using kestrel::is_same_file_path;
 using kestrel::parse_cli;
 
 namespace
@@ -92,6 +93,30 @@ TEST_CASE("--file with valid path sets file_path")
     REQUIRE(r->file_path);
     CHECK(*r->file_path == tf.str());
     CHECK(err.str().empty());
+}
+
+TEST_CASE("is_same_file_path recognizes equivalent spellings and symlinks")
+{
+    TempFile tf;
+    const auto absolute = std::filesystem::absolute(tf.str());
+    CHECK(is_same_file_path(tf.str(), absolute.string()));
+
+    const auto link = std::filesystem::temp_directory_path() /
+                      ("kestrel_cli_link_" + std::to_string(::getpid()));
+    std::error_code ec;
+    std::filesystem::create_symlink(tf.str(), link, ec);
+    REQUIRE_FALSE(ec);
+    CHECK(is_same_file_path(tf.str(), link.string()));
+    std::filesystem::remove(link, ec);
+}
+
+TEST_CASE("is_same_file_path rejects empty, missing, and distinct paths")
+{
+    TempFile first;
+    TempFile second;
+    CHECK_FALSE(is_same_file_path({}, first.str()));
+    CHECK_FALSE(is_same_file_path(first.str(), "/nonexistent/kestrel/xyzzy"));
+    CHECK_FALSE(is_same_file_path(first.str(), second.str()));
 }
 
 TEST_CASE("--file with missing value returns nullopt and writes error")
