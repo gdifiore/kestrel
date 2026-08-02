@@ -23,6 +23,17 @@ namespace kestrel
         return std::filesystem::is_regular_file(status);
     }
 
+    bool is_same_file_path(std::string_view lhs, std::string_view rhs)
+    {
+        if (lhs.empty() || rhs.empty())
+            return false;
+
+        std::error_code ec;
+        const bool same = std::filesystem::equivalent(std::filesystem::path{lhs},
+                                                       std::filesystem::path{rhs}, ec);
+        return !ec && same;
+    }
+
     void print_usage(std::ostream &os, const char *prog)
     {
         os << "usage: " << (prog ? prog : "kestrel")

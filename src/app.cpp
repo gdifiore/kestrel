@@ -326,6 +326,12 @@ namespace kestrel
                 return false;
             }
 
+            if (search.has_source() && is_same_file_path(p, ui.file_load.current_path))
+            {
+                spdlog::debug("skip already-open file: {}", p);
+                return true;
+            }
+
             // Start async loading
             ui.file_load.loading = true;
             ui.file_load.cancel_requested = false;
