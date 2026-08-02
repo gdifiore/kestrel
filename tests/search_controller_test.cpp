@@ -265,6 +265,20 @@ TEST_CASE("matches_before / matches_after are binary searchable on sorted matche
     CHECK(sc.matches_before(100) == 3);
 }
 
+TEST_CASE("search controller exposes limited result sets")
+{
+    TempFile tf("foo foo foo foo\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_match_limit(2);
+    sc.set_pattern("foo", 0);
+    rescan_now(sc);
+
+    REQUIRE(sc.matches().size() == 2);
+    CHECK(sc.results_truncated());
+    CHECK(sc.matches_before(100) == 2);
+}
+
 TEST_CASE("stale scan result is ignored after pattern changes")
 {
     TempFile tf("foo\nbar\n");

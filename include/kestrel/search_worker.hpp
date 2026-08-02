@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <functional>
 #include <list>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -42,6 +43,7 @@ namespace kestrel
             std::shared_ptr<const Source> source; // For search jobs - keeps mmap alive
             std::shared_ptr<const LineIndex> lines; // For search jobs - shared, avoids copying the index
             uint64_t generation = 0;              // For cancellation when newer job arrives
+            std::size_t match_limit = std::numeric_limits<std::size_t>::max();
             std::shared_ptr<LoadProgress> load_progress;
         };
 
@@ -50,7 +52,9 @@ namespace kestrel
         {
             JobType type;
             std::vector<Match> matches;
+            std::vector<std::size_t> prefix_max_end;
             std::vector<std::size_t> matched_lines;
+            bool truncated = false;
             std::string error;   // Compilation or loading error if any
             double scan_ms;      // Time taken for this operation
             uint64_t generation; // Which job produced this result
@@ -62,7 +66,10 @@ namespace kestrel
         };
 
         using LoadCallback = std::function<void(std::shared_ptr<Source>, std::shared_ptr<LineIndex>, TimestampIndex, std::string, bool, double, uint64_t)>;
-        using SearchCallback = std::function<void(std::vector<Match> &&, std::vector<std::size_t> &&, std::string &&, double, uint64_t)>;
+        using SearchCallback = std::function<void(std::vector<Match> &&,
+                                                  std::vector<std::size_t> &&,
+                                                  std::vector<std::size_t> &&,
+                                                  bool, std::string &&, double, uint64_t)>;
 
     public:
         SearchWorker(LoadCallback load_callback, SearchCallback search_callback);
@@ -92,6 +99,17 @@ namespace kestrel
             bool cancelled = false;
         };
         LoadOutcome build_load(const Job &job);
+
+        struct SearchOutcome
+        {
+            std::vector<Match> matches;
+            std::vector<std::size_t> prefix_max_end;
+            std::vector<std::size_t> matched_lines;
+            std::string error;
+            bool truncated = false;
+        };
+        SearchOutcome run_search(const Job &job);
+        void discard_compiled(const Job &job);
 
         LoadCallback load_callback_;
         SearchCallback search_callback_;

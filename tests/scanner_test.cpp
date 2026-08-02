@@ -57,6 +57,28 @@ TEST_CASE("no match returns empty, no throw")
     CHECK(hits.empty());
 }
 
+TEST_CASE("streaming scan reports and enforces a match limit")
+{
+    Scanner s("a");
+    bool truncated = false;
+    auto hits = s.scan("aaaa", nullptr, 0, 2, &truncated);
+
+    REQUIRE(hits.size() == 2);
+    CHECK(truncated);
+    CHECK(hits[0].start == 0);
+    CHECK(hits[1].start == 1);
+}
+
+TEST_CASE("stream close reports end-of-data matches")
+{
+    Scanner s("foo$");
+    auto hits = s.scan("prefix foo");
+
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].start == 7);
+    CHECK(hits[0].end == 10);
+}
+
 TEST_CASE("invalid pattern throws ScannerError")
 {
     CHECK_THROWS_AS(Scanner("[unclosed"), ScannerError);

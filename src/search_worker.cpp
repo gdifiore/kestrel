@@ -8,6 +8,36 @@
 
 namespace kestrel
 {
+    namespace
+    {
+        void build_search_indexes(const std::vector<Match> &matches,
+                                  const LineIndex *lines,
+                                  std::vector<std::size_t> &prefix_max_end,
+                                  std::vector<std::size_t> &matched_lines)
+        {
+            prefix_max_end.resize(matches.size());
+            matched_lines.clear();
+            if (lines)
+                matched_lines.reserve(std::min(matches.size(), lines->line_count()));
+
+            const std::span<const std::size_t> starts = lines ? lines->line_starts() :
+                                                               std::span<const std::size_t>{};
+            std::size_t running_max = 0;
+            std::size_t line = 0;
+            for (std::size_t i = 0; i < matches.size(); ++i)
+            {
+                const Match &match = matches[i];
+                running_max = std::max(running_max, match.end);
+                prefix_max_end[i] = running_max;
+                if (!lines)
+                    continue;
+                while (line + 1 < starts.size() && match.start >= starts[line + 1])
+                    ++line;
+                if (matched_lines.empty() || matched_lines.back() != line)
+                    matched_lines.push_back(line);
+            }
+        }
+    }
 
     SearchWorker::SearchWorker(LoadCallback load_callback, SearchCallback search_callback)
         : load_callback_(load_callback), search_callback_(search_callback), stop_(false), generation_(1)
@@ -20,6 +50,7 @@ namespace kestrel
         {
             std::lock_guard<std::mutex> lock(mutex_);
             stop_.store(true);
+            generation_.fetch_add(1, std::memory_order_relaxed);
         }
         cv_.notify_one();
         if (worker_.joinable())
@@ -161,59 +192,55 @@ namespace kestrel
     void SearchWorker::process_search_job(const Job &job)
     {
         auto t0 = std::chrono::steady_clock::now();
-
-        std::vector<Match> matches;
-        std::vector<std::size_t> matched_lines;
-        std::string error;
-
-        try
-        {
-            Scanner &scanner = get_or_compile(job.pattern, job.flags);
-            auto span = job.source->bytes();
-            spdlog::debug("worker scanning pattern '{}' on {} bytes", job.pattern, span.size());
-            matches = scanner.scan(
-                std::string_view{span.data(), span.size()}, // Convert span to string_view
-                &generation_, job.generation);
-            spdlog::debug("worker found {} matches", matches.size());
-
-            // Build matched_lines with deduplication (requires lines_)
-            if (job.lines && !matches.empty())
-            {
-                const auto starts = job.lines->line_starts();
-                matched_lines.reserve(std::min(matches.size(), starts.size()));
-                std::size_t line = 0;
-                for (const Match &match : matches)
-                {
-                    while (line + 1 < starts.size() && match.start >= starts[line + 1])
-                        ++line;
-                    if (matched_lines.empty() || matched_lines.back() != line)
-                        matched_lines.push_back(line);
-                }
-            }
-        }
-        catch (const ScannerError &e)
-        {
-            error = e.what();
-            spdlog::error("worker scan failed: {}", error);
-            // Drop the offending entry: a compile failure means nothing was cached;
-            // a scan-time failure leaves a working compile we still don't want to
-            // pin (likely transient state on this scratch).
-            auto it = std::find_if(compile_cache_.begin(), compile_cache_.end(),
-                                   [&](const CompiledEntry &e_)
-                                   {
-                                       return e_.pattern == job.pattern && e_.flags == job.flags;
-                                   });
-            if (it != compile_cache_.end())
-                compile_cache_.erase(it);
-        }
+        SearchOutcome outcome = run_search(job);
 
         auto t1 = std::chrono::steady_clock::now();
         double scan_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
         spdlog::debug("rescan pattern='{}' flags={:#x} matches={} time={:.2f}ms",
-                      job.pattern, job.flags, matches.size(), scan_ms);
+                      job.pattern, job.flags, outcome.matches.size(), scan_ms);
 
-        search_callback_(std::move(matches), std::move(matched_lines), std::move(error), scan_ms, job.generation);
+        search_callback_(std::move(outcome.matches), std::move(outcome.prefix_max_end),
+                         std::move(outcome.matched_lines), outcome.truncated,
+                         std::move(outcome.error), scan_ms, job.generation);
+    }
+
+    SearchWorker::SearchOutcome SearchWorker::run_search(const Job &job)
+    {
+        SearchOutcome outcome;
+        try
+        {
+            Scanner &scanner = get_or_compile(job.pattern, job.flags);
+            const auto span = job.source->bytes();
+            spdlog::debug("worker scanning pattern '{}' on {} bytes", job.pattern, span.size());
+            outcome.matches = scanner.scan(
+                std::string_view{span.data(), span.size()},
+                &generation_, job.generation, job.match_limit, &outcome.truncated);
+            build_search_indexes(outcome.matches, job.lines.get(),
+                                 outcome.prefix_max_end, outcome.matched_lines);
+            spdlog::debug("worker found {} matches", outcome.matches.size());
+        }
+        catch (const ScannerError &e)
+        {
+            outcome.error = e.what();
+            spdlog::error("worker scan failed: {}", outcome.error);
+            discard_compiled(job);
+        }
+        return outcome;
+    }
+
+    void SearchWorker::discard_compiled(const Job &job)
+    {
+        // A compile failure creates no entry; a scan-time failure should not pin
+        // the associated database and scratch block in the LRU.
+        const auto it = std::find_if(compile_cache_.begin(), compile_cache_.end(),
+                                     [&](const CompiledEntry &entry)
+                                     {
+                                         return entry.pattern == job.pattern &&
+                                                entry.flags == job.flags;
+                                     });
+        if (it != compile_cache_.end())
+            compile_cache_.erase(it);
     }
 
     // LRU lookup keyed on (pattern, flags). Hit: splice to front, return.

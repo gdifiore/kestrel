@@ -84,14 +84,20 @@ namespace kestrel
                 pending_.ms = load_ms;
                 pending_.generation = generation;
             },
-            [this](std::vector<Match> &&matches, std::vector<std::size_t> &&matched_lines, std::string &&error, double scan_ms, uint64_t generation)
+            [this](std::vector<Match> &&matches,
+                   std::vector<std::size_t> &&prefix_max_end,
+                   std::vector<std::size_t> &&matched_lines,
+                   bool truncated, std::string &&error,
+                   double scan_ms, uint64_t generation)
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 pending_ = PendingResult{};
                 pending_.has_value = true;
                 pending_.is_load = false;
                 pending_.matches = std::move(matches);
+                pending_.prefix_max_end = std::move(prefix_max_end);
                 pending_.matched_lines = std::move(matched_lines);
+                pending_.truncated = truncated;
                 pending_.error = std::move(error);
                 pending_.ms = scan_ms;
                 pending_.generation = generation;
@@ -237,6 +243,7 @@ namespace kestrel
         matches_.clear();
         prefix_max_end_.clear();
         matched_lines_.clear();
+        results_truncated_ = false;
         compile_error_.clear();
         dirty_ = false;
         job_pending_ = false;
@@ -270,6 +277,7 @@ namespace kestrel
             .source = {},
             .lines = {},
             .generation = generation,
+            .match_limit = match_limit_,
             .load_progress = load_progress_,
         };
         worker_->submit_job(std::move(job));
@@ -321,6 +329,7 @@ namespace kestrel
         matches_.clear();
         prefix_max_end_.clear();
         matched_lines_.clear();
+        results_truncated_ = false;
         compile_error_.clear();
         search_generation_ = worker_->next_generation();
         load_generation_ = search_generation_;
@@ -414,6 +423,7 @@ namespace kestrel
                 matches_.clear();
                 prefix_max_end_.clear();
                 matched_lines_.clear();
+                results_truncated_ = false;
                 compile_error_.clear();
                 last_scan_ms_ = 0.0;
                 completed_generation_.fetch_add(1, std::memory_order_release);
@@ -423,6 +433,7 @@ namespace kestrel
                 matches_.clear();
                 prefix_max_end_.clear();
                 matched_lines_.clear();
+                results_truncated_ = false;
                 compile_error_ = "regex syntax: " + reason;
                 last_scan_ms_ = 0.0;
                 completed_generation_.fetch_add(1, std::memory_order_release);
@@ -461,6 +472,7 @@ namespace kestrel
             .source = source_, // shared ownership keeps Source alive
             .lines = lines_,
             .generation = generation,
+            .match_limit = match_limit_,
             .load_progress = {},
         };
         worker_->submit_job(std::move(job));
@@ -509,6 +521,7 @@ namespace kestrel
                 matches_.clear();
                 prefix_max_end_.clear();
                 matched_lines_.clear();
+                results_truncated_ = false;
                 compile_error_.clear();
                 last_scan_ms_ = r.ms;
 
@@ -530,14 +543,9 @@ namespace kestrel
                     return;
             }
             matches_ = std::move(r.matches);
-            prefix_max_end_.resize(matches_.size());
-            std::size_t running_max = 0;
-            for (std::size_t i = 0; i < matches_.size(); ++i)
-            {
-                running_max = std::max(running_max, matches_[i].end);
-                prefix_max_end_[i] = running_max;
-            }
+            prefix_max_end_ = std::move(r.prefix_max_end);
             matched_lines_ = std::move(r.matched_lines);
+            results_truncated_ = r.truncated;
             compile_error_ = std::move(r.error);
             last_scan_ms_ = r.ms;
         }

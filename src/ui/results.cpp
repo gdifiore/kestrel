@@ -232,25 +232,36 @@ namespace kestrel
             const std::size_t gm_end = single_line ? match.end : row.end;
 
             auto &cache = in.groupmatch.span_cache;
+            auto &recency = in.groupmatch.recency;
             constexpr std::size_t CACHE_MAX = 8192;
-            if (cache.size() >= CACHE_MAX)
-                cache.clear();
             const GroupSpanCacheKey key{gm_start, gm_end};
-            auto [it, inserted] = cache.try_emplace(key);
-            if (inserted)
+            auto it = cache.find(key);
+            if (it == cache.end())
             {
+                if (cache.size() >= CACHE_MAX)
+                {
+                    cache.erase(recency.back());
+                    recency.pop_back();
+                }
+                recency.push_front(key);
+                it = cache.try_emplace(
+                    key, CachedGroupSpanEntry{{}, recency.begin()}).first;
+
                 thread_local std::vector<GroupMatcher::Span> group_spans;
                 thread_local std::vector<int> group_indices;
                 group_spans.clear();
                 group_indices.clear();
                 gm.match_into(source_bytes, gm_start, gm_end, group_spans, group_indices);
-                it->second.reserve(group_spans.size());
+                it->second.spans.reserve(group_spans.size());
                 for (std::size_t i = 0; i < group_spans.size(); ++i)
-                    it->second.push_back({group_spans[i].start, group_spans[i].end, group_indices[i]});
+                    it->second.spans.push_back(
+                        {group_spans[i].start, group_spans[i].end, group_indices[i]});
             }
+            else
+                recency.splice(recency.begin(), recency, it->second.recency);
 
             const auto &group_palette = in.view.group_colors;
-            for (const CachedGroupSpan &g : it->second)
+            for (const CachedGroupSpan &g : it->second.spans)
             {
                 if (g.end <= g.start || g.end <= row.start || g.start >= row.end)
                 {
@@ -284,7 +295,7 @@ namespace kestrel
             const bool has_groups = gm != nullptr && gm->group_count() > 0;
             if (in.groupmatch.cache_generation != search.completed_generation())
             {
-                in.groupmatch.span_cache.clear();
+                in.groupmatch.clear_cache();
                 in.groupmatch.cache_generation = search.completed_generation();
             }
 
@@ -601,6 +612,7 @@ namespace kestrel
         in.layout.view_cache_filter_view = filter_view;
         in.layout.view_cache_time_start = tf.start;
         in.layout.view_cache_time_end = tf.end;
+        ++in.layout.view_revision;
     }
 
     void draw_results(UiInputs &in, const SearchController &search)

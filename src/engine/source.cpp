@@ -50,7 +50,11 @@ namespace kestrel
         if (p == MAP_FAILED)
             throw_errno("mmap");
 
-        madvise(p, sb.st_size, MADV_SEQUENTIAL);
+        // Keep the mapping at the kernel's normal access policy. It serves both
+        // sequential background scans and random interactive viewport reads;
+        // permanently marking it MADV_SEQUENTIAL can evict pages immediately
+        // behind a scan and turn backward scrolling into avoidable page faults.
+        madvise(p, sb.st_size, MADV_NORMAL);
 
         s.data_ = static_cast<const char *>(p);
         s.size_ = static_cast<std::size_t>(sb.st_size);

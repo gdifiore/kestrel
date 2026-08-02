@@ -5,6 +5,7 @@
 #include <imgui.h>
 #include <array>
 #include <cstdint>
+#include <list>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -179,6 +180,20 @@ namespace kestrel
         int64_t view_cache_time_end = 0;
         bool view_cache_time_filter = false;
         bool view_cache_filter_view = false;
+        // Incremented whenever a custom view is rematerialized. Minimap caches
+        // use this in addition to the search generation.
+        uint64_t view_revision = 0;
+
+        struct MinimapCache
+        {
+            std::vector<uint8_t> occupied_pixels;
+            uint64_t completed_generation = UINT64_MAX;
+            uint64_t view_revision = UINT64_MAX;
+            int row_count = -1;
+            int height_px = -1;
+            bool use_custom = false;
+            bool filter_view = false;
+        } minimap;
     };
 
     struct GroupSpanCacheKey
@@ -204,11 +219,24 @@ namespace kestrel
         int index;
     };
 
+    struct CachedGroupSpanEntry
+    {
+        std::vector<CachedGroupSpan> spans;
+        std::list<GroupSpanCacheKey>::iterator recency;
+    };
+
     struct GroupMatch
     {
         std::optional<GroupMatcher> group_matcher_;
         uint64_t cache_generation = 0;
-        std::unordered_map<GroupSpanCacheKey, std::vector<CachedGroupSpan>, GroupSpanCacheKeyHash> span_cache;
+        std::list<GroupSpanCacheKey> recency;
+        std::unordered_map<GroupSpanCacheKey, CachedGroupSpanEntry, GroupSpanCacheKeyHash> span_cache;
+
+        void clear_cache()
+        {
+            span_cache.clear();
+            recency.clear();
+        }
     };
 
     // UI-owned state: user inputs + layout scratch. Derived/view state

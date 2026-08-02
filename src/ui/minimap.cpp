@@ -85,28 +85,103 @@ namespace kestrel
             return ratio;
         }
 
-        void draw_match_marks(ImDrawList *dl, const UiInputs &in, const ViewIndex &view,
-                              const MinimapGeometry &geo, float row_size, float mark_h)
+        void mark_minimap_row(std::vector<uint8_t> &pixels, int row,
+                              int row_count, int height_px)
         {
+            if (row < 0 || row >= row_count || height_px <= 0)
+                return;
+            const int y = std::min(
+                height_px - 1,
+                static_cast<int>((static_cast<int64_t>(row) * height_px) / row_count));
+            pixels[static_cast<std::size_t>(y)] = 1;
+        }
+
+        void rebuild_match_pixels(UiInputs &in, const SearchController &search,
+                                  const ViewIndex &view, int height_px)
+        {
+            auto &cache = in.layout.minimap;
             const int row_count = view.row_count();
-            ImU32 match_col = ImGui::GetColorU32(ImVec4(
-                in.view.color_match.x, in.view.color_match.y, in.view.color_match.z, 0.6F));
-            for (size_t src : view.matched)
+            cache.occupied_pixels.assign(static_cast<std::size_t>(std::max(0, height_px)), 0);
+
+            if (row_count > 0 && height_px > 0)
             {
-                int row = view.source_to_row(src);
-                if (row < 0)
+                if (view.use_custom && view.filter_view)
                 {
+                    // view_lines is already regex matches intersected with the
+                    // custom filters, so every displayed row is a match.
+                    std::fill(cache.occupied_pixels.begin(), cache.occupied_pixels.end(), 1);
+                }
+                else if (view.use_custom)
+                {
+                    // Merge the two sorted line sets once instead of performing
+                    // one binary search per match.
+                    std::size_t match_i = 0;
+                    for (int row = 0; row < row_count && match_i < view.matched.size(); ++row)
+                    {
+                        const std::size_t source_line = view.view_lines[static_cast<std::size_t>(row)];
+                        while (match_i < view.matched.size() && view.matched[match_i] < source_line)
+                            ++match_i;
+                        if (match_i < view.matched.size() && view.matched[match_i] == source_line)
+                            mark_minimap_row(cache.occupied_pixels, row, row_count, height_px);
+                    }
+                }
+                else if (view.filter_view)
+                {
+                    // The displayed rows are matched[] itself.
+                    std::fill(cache.occupied_pixels.begin(), cache.occupied_pixels.end(), 1);
+                }
+                else
+                {
+                    for (std::size_t source_line : view.matched)
+                    {
+                        if (source_line >= static_cast<std::size_t>(row_count))
+                            break;
+                        mark_minimap_row(cache.occupied_pixels,
+                                         static_cast<int>(source_line), row_count, height_px);
+                    }
+                }
+            }
+
+            cache.completed_generation = search.completed_generation();
+            cache.view_revision = in.layout.view_revision;
+            cache.row_count = row_count;
+            cache.height_px = height_px;
+            cache.use_custom = view.use_custom;
+            cache.filter_view = view.filter_view;
+        }
+
+        void draw_match_marks(ImDrawList *dl, UiInputs &in, const SearchController &search,
+                              const ViewIndex &view, const MinimapGeometry &geo)
+        {
+            auto &cache = in.layout.minimap;
+            if (cache.completed_generation != search.completed_generation() ||
+                cache.view_revision != in.layout.view_revision ||
+                cache.row_count != view.row_count() ||
+                cache.height_px != geo.height_px ||
+                cache.use_custom != view.use_custom ||
+                cache.filter_view != view.filter_view)
+            {
+                rebuild_match_pixels(in, search, view, geo.height_px);
+            }
+
+            const ImU32 match_col = ImGui::GetColorU32(ImVec4(
+                in.view.color_match.x, in.view.color_match.y, in.view.color_match.z, 0.6F));
+            for (int y = 0; y < geo.height_px;)
+            {
+                if (cache.occupied_pixels[static_cast<std::size_t>(y)] == 0)
+                {
+                    ++y;
                     continue;
                 }
-                if (row >= row_count)
-                {
-                    break;
-                }
-                float y = geo.pos_y + row * row_size;
+                int end = y + 1;
+                while (end < geo.height_px &&
+                       cache.occupied_pixels[static_cast<std::size_t>(end)] != 0)
+                    ++end;
                 dl->AddRectFilled(
-                    ImVec2(geo.pos_x, y),
-                    ImVec2(geo.pos_x + geo.width_px, y + mark_h),
+                    ImVec2(geo.pos_x, geo.pos_y + static_cast<float>(y)),
+                    ImVec2(geo.pos_x + geo.width_px, geo.pos_y + static_cast<float>(end)),
                     match_col);
+                y = end;
             }
         }
 
@@ -143,7 +218,8 @@ namespace kestrel
                 ImGui::GetColorU32(in.view.color_scope));
         }
 
-        void draw_minimap_contents(UiInputs &in, const ViewIndex &view,
+        void draw_minimap_contents(UiInputs &in, const SearchController &search,
+                                   const ViewIndex &view,
                                    const MinimapGeometry &geo, int cursor_row)
         {
             ImDrawList *dl = ImGui::GetWindowDrawList();
@@ -169,7 +245,7 @@ namespace kestrel
             const float row_size = compute_row_size(row_count, geo.height_px);
             const float mark_h = std::max(row_size, 1.0F);
 
-            draw_match_marks(dl, in, view, geo, row_size, mark_h);
+            draw_match_marks(dl, in, search, view, geo);
             draw_viewport_indicator(dl, in, geo, row_count, row_size);
             draw_cursor_mark(dl, in, geo, cursor_row, row_count, row_size, mark_h);
         }
@@ -197,7 +273,7 @@ namespace kestrel
 
         if (ImGui::Begin("##minimap", nullptr, flags))
         {
-            draw_minimap_contents(in, view, geo, cursor_row);
+            draw_minimap_contents(in, search, view, geo, cursor_row);
         }
         ImGui::End();
     }

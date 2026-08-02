@@ -4,7 +4,7 @@
 
 #include <hs.h>
 #include <algorithm>
-#include <climits>
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <stdexcept>
@@ -20,7 +20,12 @@ namespace kestrel
             std::vector<Match> *out;
             const std::atomic<uint64_t> *cancel_counter;
             uint64_t my_gen;
+            std::size_t match_limit;
+            bool cancelled = false;
+            bool truncated = false;
         };
+
+        constexpr std::size_t SCAN_CHUNK_BYTES = 16 * 1024 * 1024;
 
         int on_match(unsigned int /*id*/,
                      unsigned long long from,
@@ -29,9 +34,19 @@ namespace kestrel
                      void *ctx)
         {
             auto *c = static_cast<ScanCtx *>(ctx);
+            if (c->cancelled || c->truncated)
+                return 1;
             if (c->cancel_counter &&
                 c->cancel_counter->load(std::memory_order_relaxed) != c->my_gen)
+            {
+                c->cancelled = true;
                 return 1; // abort scan
+            }
+            if (c->out->size() >= c->match_limit)
+            {
+                c->truncated = true;
+                return 1;
+            }
             c->out->push_back({from, to});
             return 0;
         }
@@ -43,10 +58,12 @@ namespace kestrel
         flags |= HS_FLAG_SOM_LEFTMOST;
 
         hs_compile_error_t *cerr = nullptr;
-        // Vectored mode has the same whole-buffer semantics as block mode, but
-        // lets a mapped file larger than the 32-bit hs_scan length limit be
-        // supplied as multiple contiguous segments.
-        hs_error_t rc = hs_compile(pat.c_str(), flags, HS_MODE_VECTORED, nullptr, &db_, &cerr);
+        // Streaming mode preserves whole-file regex semantics across bounded
+        // chunks while giving the caller cancellation checkpoints even when a
+        // scan produces no callbacks. The large SOM horizon retains exact byte
+        // offsets for matches spanning distant chunks.
+        const unsigned mode = HS_MODE_STREAM | HS_MODE_SOM_HORIZON_LARGE;
+        hs_error_t rc = hs_compile(pat.c_str(), flags, mode, nullptr, &db_, &cerr);
 
         if (rc != HS_SUCCESS)
         {
@@ -85,39 +102,47 @@ namespace kestrel
 
     std::vector<Match> Scanner::scan(std::string_view buf,
                                      const std::atomic<uint64_t> *cancel_counter,
-                                     uint64_t my_gen) const
+                                     uint64_t my_gen,
+                                     std::size_t match_limit,
+                                     bool *truncated) const
     {
         std::vector<Match> out;
         // Pre-reserve based on buffer size - estimate 1 match per 10KB for typical patterns
-        out.reserve(buf.size() / 10240 + 100);
-        ScanCtx ctx{&out, cancel_counter, my_gen};
+        out.reserve(std::min(buf.size() / 10240 + 100, match_limit));
+        ScanCtx ctx{&out, cancel_counter, my_gen, match_limit};
 
-        // hs_scan_vector takes 32-bit segment lengths, not a 32-bit total.
-        // Split only when necessary so ordinary scans retain a single segment.
-        std::vector<const char *> data;
-        std::vector<unsigned int> lengths;
-        data.reserve(buf.size() / UINT_MAX + 1);
-        lengths.reserve(buf.size() / UINT_MAX + 1);
-        std::size_t offset = 0;
-        do
+        hs_stream_t *stream = nullptr;
+        hs_error_t rc = hs_open_stream(db_, 0, &stream);
+        if (rc != HS_SUCCESS)
+            throw ScannerError("hs_open_stream failed: rc=" + std::to_string(rc));
+
+        for (std::size_t offset = 0; offset < buf.size();)
         {
-            const std::size_t remaining = buf.size() - offset;
-            const auto length = static_cast<unsigned int>(std::min(remaining, static_cast<std::size_t>(UINT_MAX)));
-            data.push_back(buf.data() + offset);
-            lengths.push_back(length);
+            if (cancel_counter && cancel_counter->load(std::memory_order_relaxed) != my_gen)
+            {
+                ctx.cancelled = true;
+                break;
+            }
+            const auto length = static_cast<unsigned int>(
+                std::min(SCAN_CHUNK_BYTES, buf.size() - offset));
+            rc = hs_scan_stream(stream, buf.data() + offset, length, 0,
+                                scratch_, on_match, &ctx);
             offset += length;
-        } while (offset < buf.size());
-
-        hs_error_t rc = hs_scan_vector(db_, data.data(), lengths.data(),
-                                       static_cast<unsigned int>(data.size()),
-                                       0, scratch_, on_match, &ctx);
-
-        // HS_SCAN_TERMINATED means our callback returned non-zero (cancellation).
-        // Treat as a normal early return; caller will discard stale results.
-        if (rc != HS_SUCCESS && rc != HS_SCAN_TERMINATED)
-        {
-            throw ScannerError("hs_scan failed: rc=" + std::to_string(rc));
+            if (rc == HS_SCAN_TERMINATED)
+                break;
+            if (rc != HS_SUCCESS)
+            {
+                hs_close_stream(stream, scratch_, on_match, &ctx);
+                throw ScannerError("hs_scan_stream failed: rc=" + std::to_string(rc));
+            }
         }
+
+        const hs_error_t close_rc = hs_close_stream(stream, scratch_, on_match, &ctx);
+        if (close_rc != HS_SUCCESS && close_rc != HS_SCAN_TERMINATED)
+            throw ScannerError("hs_close_stream failed: rc=" + std::to_string(close_rc));
+
+        if (truncated)
+            *truncated = ctx.truncated;
         return out;
     }
 

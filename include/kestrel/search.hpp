@@ -48,6 +48,7 @@ namespace kestrel
 
         void set_pattern(std::string_view pattern, unsigned flags);
         void set_debounce_ms(int ms) noexcept { debounce_ms_ = ms; }
+        void set_match_limit(std::size_t limit) noexcept { match_limit_ = limit; }
 
         void set_tail_mode(bool on);
         bool tail_mode() const noexcept { return tail_mode_; }
@@ -61,6 +62,7 @@ namespace kestrel
 
         const std::vector<Match> &matches() const noexcept { return matches_; }
         const std::vector<std::size_t> &matched_lines() const noexcept { return matched_lines_; }
+        bool results_truncated() const noexcept { return results_truncated_; }
         bool pattern_empty() const noexcept { return pattern_.empty(); }
         const std::string &compile_error() const noexcept { return compile_error_; }
         bool is_compiling() const noexcept
@@ -104,6 +106,9 @@ namespace kestrel
         unsigned flags_ = 0;
         double last_edit_sec_ = 0.0;
         int debounce_ms_ = 150;
+        // Prevent broad expressions from materializing an unbounded result set.
+        // The scan stops at this many retained matches and reports truncation.
+        std::size_t match_limit_ = 2'000'000;
 
         // Results from completed scans
         std::vector<Match> matches_;
@@ -111,6 +116,7 @@ namespace kestrel
         // locate matches that started before `lo` but extend into it.
         std::vector<std::size_t> prefix_max_end_;
         std::vector<std::size_t> matched_lines_;
+        bool results_truncated_ = false;
         std::string compile_error_;
         double last_scan_ms_ = 0.0;
 
@@ -140,7 +146,9 @@ namespace kestrel
             std::shared_ptr<LineIndex> lines;        // load
             TimestampIndex timestamps;               // load
             std::vector<Match> matches;             // search
+            std::vector<std::size_t> prefix_max_end; // search
             std::vector<std::size_t> matched_lines; // search
+            bool truncated = false;
             std::string error;
             bool cancelled = false;
             double ms = 0.0;
