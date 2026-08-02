@@ -94,6 +94,7 @@ namespace kestrel
         // mutated by the UI thread alone and readers need no lock. The worker
         // thread only ever writes into pending_ (under mutex_), never live state.
         void drain_results();
+        void close_tail_watch();
         void reset_tail_watch();
         void consume_tail_events(double now_sec);
         void reload_tail_source(double now_sec);
@@ -158,10 +159,16 @@ namespace kestrel
 
         std::atomic<uint64_t> completed_generation_{0};
 
-        // UI-thread-only inotify state. A directory watch catches both writes
-        // and log rotation (rename followed by a replacement file).
+        // UI-thread-only follow-mode watcher state. Linux watches the parent
+        // directory with inotify; macOS watches the opened file with kqueue.
+#if defined(__linux__)
         int inotify_fd_ = -1;
         int inotify_watch_ = -1;
+#elif defined(__APPLE__)
+        int kqueue_fd_ = -1;
+        int tail_file_fd_ = -1;
+        int tail_directory_fd_ = -1;
+#endif
         bool tail_mode_ = false;
         bool tail_paused_ = false;
         bool tail_needs_refresh_ = false;

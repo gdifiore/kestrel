@@ -9,7 +9,13 @@
 #include <filesystem>
 #include <thread>
 
+#if defined(__linux__)
 #include <sys/inotify.h>
+#elif defined(__APPLE__)
+#include <sys/event.h>
+#endif
+
+#include <fcntl.h>
 #include <unistd.h>
 
 namespace kestrel
@@ -106,8 +112,7 @@ namespace kestrel
 
     SearchController::~SearchController()
     {
-        if (inotify_fd_ != -1)
-            close(inotify_fd_);
+        close_tail_watch();
         worker_.reset();
     }
 
@@ -119,25 +124,47 @@ namespace kestrel
         tail_needs_refresh_ = false;
         if (tail_mode_)
             reset_tail_watch();
-        else if (inotify_fd_ != -1)
+        else
         {
-            close(inotify_fd_);
-            inotify_fd_ = -1;
-            inotify_watch_ = -1;
+            close_tail_watch();
         }
     }
 
-    void SearchController::reset_tail_watch()
+    void SearchController::close_tail_watch()
     {
+#if defined(__linux__)
         if (inotify_fd_ != -1)
         {
             close(inotify_fd_);
             inotify_fd_ = -1;
             inotify_watch_ = -1;
         }
+#elif defined(__APPLE__)
+        if (tail_file_fd_ != -1)
+        {
+            close(tail_file_fd_);
+            tail_file_fd_ = -1;
+        }
+        if (tail_directory_fd_ != -1)
+        {
+            close(tail_directory_fd_);
+            tail_directory_fd_ = -1;
+        }
+        if (kqueue_fd_ != -1)
+        {
+            close(kqueue_fd_);
+            kqueue_fd_ = -1;
+        }
+#endif
+    }
+
+    void SearchController::reset_tail_watch()
+    {
+        close_tail_watch();
         if (!tail_mode_ || !source_ || source_->path().empty())
             return;
 
+#if defined(__linux__)
         inotify_fd_ = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
         if (inotify_fd_ == -1)
         {
@@ -155,13 +182,61 @@ namespace kestrel
             close(inotify_fd_);
             inotify_fd_ = -1;
         }
+#elif defined(__APPLE__)
+        tail_file_fd_ = open(source_->path().c_str(), O_EVTONLY);
+        if (tail_file_fd_ == -1)
+        {
+            spdlog::warn("open follow-mode file '{}' failed: {}", source_->path(),
+                         std::strerror(errno));
+            return;
+        }
+
+        const std::filesystem::path file(source_->path());
+        const std::string parent = file.parent_path().empty() ? "." : file.parent_path().string();
+        tail_directory_fd_ = open(parent.c_str(), O_EVTONLY);
+        if (tail_directory_fd_ == -1)
+        {
+            spdlog::warn("open follow-mode directory '{}' failed: {}", parent,
+                         std::strerror(errno));
+            close_tail_watch();
+            return;
+        }
+
+        kqueue_fd_ = kqueue();
+        if (kqueue_fd_ == -1)
+        {
+            spdlog::warn("kqueue for follow mode failed: {}", std::strerror(errno));
+            close_tail_watch();
+            return;
+        }
+
+        std::array<struct kevent, 2> changes{};
+        EV_SET(&changes[0], tail_file_fd_, EVFILT_VNODE, EV_ADD | EV_CLEAR,
+               NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_RENAME | NOTE_DELETE,
+               0, nullptr);
+        // Directory events let follow mode retry after a delete-then-create
+        // rotation, when the original file vnode no longer reports activity.
+        EV_SET(&changes[1], tail_directory_fd_, EVFILT_VNODE, EV_ADD | EV_CLEAR,
+               NOTE_WRITE | NOTE_RENAME | NOTE_DELETE, 0, nullptr);
+        if (kevent(kqueue_fd_, changes.data(), static_cast<int>(changes.size()),
+                   nullptr, 0, nullptr) == -1)
+        {
+            spdlog::warn("kqueue follow-mode registration failed: {}", std::strerror(errno));
+            close_tail_watch();
+        }
+#else
+        spdlog::warn("follow mode is unavailable on this platform");
+#endif
     }
 
     void SearchController::consume_tail_events(double now_sec)
     {
-        if (!tail_mode_ || inotify_fd_ == -1 || !source_)
+        if (!tail_mode_ || !source_)
             return;
 
+#if defined(__linux__)
+        if (inotify_fd_ == -1)
+            return;
         const std::filesystem::path file(source_->path());
         const std::string name = file.filename().string();
         std::array<char, 4096> bytes{};
@@ -184,6 +259,31 @@ namespace kestrel
                 p += sizeof(inotify_event) + event->len;
             }
         }
+#elif defined(__APPLE__)
+        if (kqueue_fd_ == -1)
+            return;
+        std::array<struct kevent, 8> events{};
+        const timespec timeout{};
+        const int count = kevent(kqueue_fd_, nullptr, 0, events.data(),
+                                 static_cast<int>(events.size()), &timeout);
+        if (count == -1)
+        {
+            spdlog::warn("kqueue follow-mode read failed: {}", std::strerror(errno));
+            return;
+        }
+        bool changed = false;
+        constexpr unsigned int change_mask = NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB |
+                                             NOTE_RENAME | NOTE_DELETE;
+        for (int i = 0; i < count; ++i)
+        {
+            const auto &event = events[static_cast<std::size_t>(i)];
+            if ((event.fflags & change_mask) != 0 ||
+                event.ident == static_cast<uintptr_t>(tail_directory_fd_))
+                changed = true;
+        }
+#else
+        return;
+#endif
 
         tail_needs_refresh_ = tail_needs_refresh_ || changed;
         if (!tail_paused_ && tail_needs_refresh_)
@@ -208,6 +308,11 @@ namespace kestrel
             source_ = std::move(next_source);
             lines_ = std::move(next_lines);
             ts_index_ = TimestampIndex(source_->bytes(), *lines_);
+#if defined(__APPLE__)
+            // A rename/delete event belongs to the old vnode. Attach a new
+            // file watcher to the freshly mapped replacement.
+            reset_tail_watch();
+#endif
             tail_needs_refresh_ = false;
             tail_updated_ = true;
 
