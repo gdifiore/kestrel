@@ -87,7 +87,10 @@ namespace kestrel
                 ImGui::SameLine();
                 ImGui::TextDisabled("|");
                 ImGui::SameLine();
-                ImGui::Text("%zu matches", search.matches().size());
+                if (search.results_truncated())
+                    ImGui::Text("%zu+ matches (limited)", search.matches().size());
+                else
+                    ImGui::Text("%zu matches", search.matches().size());
                 ImGui::SameLine();
                 if (search.is_compiling())
                     ImGui::TextDisabled("Scanning…");
