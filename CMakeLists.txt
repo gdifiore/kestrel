@@ -196,5 +196,32 @@ install(FILES
 install(FILES "${KESTREL_FONT_DIR}/JetBrainsMono-Regular.ttf"
         DESTINATION ${CMAKE_INSTALL_DATADIR}/kestrel/fonts)
 
+# Keep the project and dependency notices available in installed releases.
+set(KESTREL_DOC_DIR "${CMAKE_INSTALL_DATADIR}/doc/kestrel")
+install(FILES LICENSE THIRD_PARTY_NOTICES.md
+        DESTINATION ${KESTREL_DOC_DIR})
+install(FILES third_party/imgui/LICENSE.txt
+        DESTINATION ${KESTREL_DOC_DIR}/third-party/imgui)
+install(FILES third_party/ImGuiFileDialog/LICENSE
+        DESTINATION ${KESTREL_DOC_DIR}/third-party/ImGuiFileDialog)
+install(FILES third_party/ImGuiFileDialog/stb/LICENSE
+        DESTINATION ${KESTREL_DOC_DIR}/third-party/ImGuiFileDialog/stb)
+install(FILES third_party/ImGuiFileDialog/dirent/LICENSE
+        DESTINATION ${KESTREL_DOC_DIR}/third-party/ImGuiFileDialog/dirent)
+install(FILES third_party/glfw/LICENSE.md
+        DESTINATION ${KESTREL_DOC_DIR}/third-party/glfw)
+install(FILES third_party/pcre2/LICENCE
+        DESTINATION ${KESTREL_DOC_DIR}/third-party/pcre2)
+install(FILES third_party/vectorscan/LICENSE third_party/vectorscan/simde/COPYING
+        DESTINATION ${KESTREL_DOC_DIR}/third-party/vectorscan)
+install(FILES third_party/doctest/LICENSE.txt
+        DESTINATION ${KESTREL_DOC_DIR}/third-party/doctest)
+install(FILES "${spdlog_SOURCE_DIR}/LICENSE"
+        DESTINATION ${KESTREL_DOC_DIR}/third-party/spdlog)
+install(FILES "${spdlog_SOURCE_DIR}/include/spdlog/fmt/bundled/fmt.license.rst"
+        DESTINATION ${KESTREL_DOC_DIR}/third-party/fmt)
+install(FILES "${jetbrains_mono_SOURCE_DIR}/OFL.txt"
+        DESTINATION ${KESTREL_DOC_DIR}/third-party/jetbrains-mono)
+
 enable_testing()
 add_subdirectory(tests)

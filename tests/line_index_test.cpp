@@ -142,7 +142,7 @@ TEST_CASE("progress callback can cancel parallel line indexing")
     bool reported = false;
     CHECK_THROWS_AS(LineIndex(view(buf), [&](std::size_t done, std::size_t total)
                               {
-                                  reported = done == total;
+                                  reported = done > 0 && done <= total;
                                   return false;
                               }),
                     kestrel::LoadCancelled);

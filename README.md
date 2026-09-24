@@ -71,6 +71,13 @@ ctest --test-dir build --output-on-failure
 
 For an AddressSanitizer build, configure with `-DKESTREL_ENABLE_ASAN=ON`.
 
+## License
+
+Kestrel's original source code is available under the MIT License; see
+[`LICENSE`](LICENSE). Third-party dependencies and bundled assets remain under
+their own licenses. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for
+the dependency and font license details.
+
 ## Releases
 
 Pushing a semantic-version tag (for example, `v1.2.3`) builds, tests, and
