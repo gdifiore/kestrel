@@ -63,6 +63,7 @@ namespace kestrel
             std::lock_guard<std::mutex> lock(mutex_);
             stop_.store(true);
             generation_.fetch_add(1, std::memory_order_relaxed);
+            load_generation_.fetch_add(1, std::memory_order_relaxed);
         }
         cv_.notify_one();
         if (worker_.joinable())
@@ -78,6 +79,13 @@ namespace kestrel
     }
 
     uint64_t SearchWorker::next_generation()
+    {
+        const auto generation = next_search_generation();
+        load_generation_.store(generation, std::memory_order_relaxed);
+        return generation;
+    }
+
+    uint64_t SearchWorker::next_search_generation()
     {
         return generation_.fetch_add(1) + 1;
     }
@@ -131,18 +139,20 @@ namespace kestrel
     void SearchWorker::process_load_job(const Job &job)
     {
         auto t0 = std::chrono::steady_clock::now();
-        LoadOutcome outcome = build_load(job);
+        LoadResult outcome = build_load(job);
         auto t1 = std::chrono::steady_clock::now();
         const double load_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
-        load_callback_(std::move(outcome.source), std::move(outcome.lines),
-                       std::move(outcome.timestamps), std::move(outcome.error),
-                       outcome.cancelled, load_ms, job.generation);
+        outcome.ms = load_ms;
+        outcome.generation = job.generation;
+        outcome.refresh = job.refresh;
+        load_callback_(std::move(outcome));
     }
 
     bool SearchWorker::is_current(const Job &job) const noexcept
     {
-        return generation_.load(std::memory_order_relaxed) == job.generation;
+        const auto &generation = job.type == JobType::LoadSource ? load_generation_ : generation_;
+        return generation.load(std::memory_order_relaxed) == job.generation;
     }
 
     void SearchWorker::set_load_progress(const Job &job, LoadPhase phase,
@@ -155,9 +165,9 @@ namespace kestrel
         job.load_progress->total.store(total, std::memory_order_relaxed);
     }
 
-    SearchWorker::LoadOutcome SearchWorker::build_load(const Job &job)
+    SearchWorker::LoadResult SearchWorker::build_load(const Job &job)
     {
-        LoadOutcome outcome;
+        LoadResult outcome;
         if (!is_current(job))
         {
             outcome.cancelled = true;
@@ -205,7 +215,7 @@ namespace kestrel
     void SearchWorker::process_search_job(const Job &job)
     {
         auto t0 = std::chrono::steady_clock::now();
-        SearchOutcome outcome = run_search(job);
+        SearchResult outcome = run_search(job);
 
         auto t1 = std::chrono::steady_clock::now();
         double scan_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -213,14 +223,14 @@ namespace kestrel
         spdlog::debug("rescan pattern='{}' flags={:#x} matches={} time={:.2f}ms",
                       job.pattern, job.flags, outcome.matches.size(), scan_ms);
 
-        search_callback_(std::move(outcome.matches), std::move(outcome.prefix_max_end),
-                         std::move(outcome.matched_lines), outcome.truncated,
-                         std::move(outcome.error), scan_ms, job.generation);
+        outcome.ms = scan_ms;
+        outcome.generation = job.generation;
+        search_callback_(std::move(outcome));
     }
 
-    SearchWorker::SearchOutcome SearchWorker::run_search(const Job &job)
+    SearchWorker::SearchResult SearchWorker::run_search(const Job &job)
     {
-        SearchOutcome outcome;
+        SearchResult outcome;
         try
         {
             Scanner &scanner = get_or_compile(job.pattern, job.flags);

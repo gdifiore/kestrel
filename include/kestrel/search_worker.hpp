@@ -45,31 +45,34 @@ namespace kestrel
             uint64_t generation = 0;              // For cancellation when newer job arrives
             std::size_t match_limit = std::numeric_limits<std::size_t>::max();
             std::shared_ptr<LoadProgress> load_progress;
+            bool refresh = false;
         };
 
-        // Results from completed background operations
-        struct Result
+        struct LoadResult
         {
-            JobType type;
+            std::shared_ptr<Source> source;
+            std::shared_ptr<LineIndex> lines;
+            TimestampIndex timestamps;
+            std::string error;
+            bool cancelled = false;
+            bool refresh = false;
+            double ms = 0.0;
+            uint64_t generation = 0;
+        };
+
+        struct SearchResult
+        {
             std::vector<Match> matches;
             std::vector<std::size_t> prefix_max_end;
             std::vector<std::size_t> matched_lines;
+            std::string error;
             bool truncated = false;
-            std::string error;   // Compilation or loading error if any
-            double scan_ms;      // Time taken for this operation
-            uint64_t generation; // Which job produced this result
-
-            // For LoadSource jobs
-            std::shared_ptr<Source> source;
-            std::optional<LineIndex> lines;
-            std::string file_path;
+            double ms = 0.0;
+            uint64_t generation = 0;
         };
 
-        using LoadCallback = std::function<void(std::shared_ptr<Source>, std::shared_ptr<LineIndex>, TimestampIndex, std::string, bool, double, uint64_t)>;
-        using SearchCallback = std::function<void(std::vector<Match> &&,
-                                                  std::vector<std::size_t> &&,
-                                                  std::vector<std::size_t> &&,
-                                                  bool, std::string &&, double, uint64_t)>;
+        using LoadCallback = std::function<void(LoadResult)>;
+        using SearchCallback = std::function<void(SearchResult)>;
 
     public:
         SearchWorker(LoadCallback load_callback, SearchCallback search_callback);
@@ -77,6 +80,7 @@ namespace kestrel
 
         void submit_job(Job job);
         uint64_t next_generation();
+        uint64_t next_search_generation();
 
         // Test helper: check if any job is pending
         bool has_pending_job() const;
@@ -90,25 +94,8 @@ namespace kestrel
         void set_load_progress(const Job &job, LoadPhase phase,
                                std::size_t completed, std::size_t total) const;
 
-        struct LoadOutcome
-        {
-            std::shared_ptr<Source> source;
-            std::shared_ptr<LineIndex> lines;
-            TimestampIndex timestamps;
-            std::string error;
-            bool cancelled = false;
-        };
-        LoadOutcome build_load(const Job &job);
-
-        struct SearchOutcome
-        {
-            std::vector<Match> matches;
-            std::vector<std::size_t> prefix_max_end;
-            std::vector<std::size_t> matched_lines;
-            std::string error;
-            bool truncated = false;
-        };
-        SearchOutcome run_search(const Job &job);
+        LoadResult build_load(const Job &job);
+        SearchResult run_search(const Job &job);
         void discard_compiled(const Job &job);
 
         LoadCallback load_callback_;
@@ -117,6 +104,7 @@ namespace kestrel
         std::thread worker_;
         std::atomic<bool> stop_;
         std::atomic<uint64_t> generation_;
+        std::atomic<uint64_t> load_generation_{1};
 
         mutable std::mutex mutex_;
         std::condition_variable cv_;
