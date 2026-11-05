@@ -167,10 +167,6 @@ namespace kestrel
 
         try
         {
-            outcome.source = std::make_shared<Source>(Source::from_path(job.file_path));
-            if (!is_current(job))
-                throw LoadCancelled();
-
             const auto report = [&](std::size_t completed, std::size_t total)
             {
                 if (job.load_progress)
@@ -179,6 +175,11 @@ namespace kestrel
                                       completed, total);
                 return is_current(job);
             };
+            set_load_progress(job, LoadPhase::Opening, 0, 0);
+            outcome.source = std::make_shared<Source>(Source::from_path(job.file_path, report));
+            if (!is_current(job))
+                throw LoadCancelled();
+
             set_load_progress(job, LoadPhase::IndexingLines, 0, outcome.source->bytes().size());
             outcome.lines = std::make_shared<LineIndex>(outcome.source->bytes(), report);
             set_load_progress(job, LoadPhase::IndexingTimestamps, 0, outcome.lines->line_count());
