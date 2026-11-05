@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <variant>
 
 namespace kestrel
 {
@@ -53,7 +54,7 @@ namespace kestrel
 
         void set_tail_mode(bool on);
         bool tail_mode() const noexcept { return tail_mode_; }
-        void set_tail_paused(bool paused) noexcept { tail_paused_ = paused; }
+        void set_tail_paused(bool paused);
         bool tail_paused() const noexcept { return tail_paused_; }
         bool tail_updated_last_tick() const noexcept { return tail_updated_; }
 
@@ -95,10 +96,15 @@ namespace kestrel
         // mutated by the UI thread alone and readers need no lock. The worker
         // thread only ever writes into pending_ (under mutex_), never live state.
         void drain_results();
+        void apply_load_result(SearchWorker::LoadResult result);
+        void apply_search_result(SearchWorker::SearchResult result);
+        void clear_search_results();
+        void schedule_tail_refresh();
+        void cancel_tail_refresh();
         void close_tail_watch();
         void reset_tail_watch();
         void consume_tail_events(double now_sec);
-        void reload_tail_source(double now_sec);
+
 
         uint64_t source_revision_ = 0; // Logical source changes; follow updates retain identity.
         std::shared_ptr<Source> source_;
@@ -130,6 +136,7 @@ namespace kestrel
         mutable std::mutex mutex_;
         bool dirty_ = false;
         bool job_pending_ = false;
+        uint64_t submitted_search_generation_ = 0;
 
         // Async loading state (protected by mutex_)
         bool loading_ = false;
@@ -141,23 +148,8 @@ namespace kestrel
         // Worker -> UI handoff. The worker stashes one completed result here
         // (under mutex_); the UI thread moves it out in drain_results() and
         // applies it to the live fields above. Latest result wins on overwrite.
-        struct PendingResult
-        {
-            bool has_value = false;
-            bool is_load = false;
-            std::shared_ptr<Source> source;         // load
-            std::shared_ptr<LineIndex> lines;        // load
-            TimestampIndex timestamps;               // load
-            std::vector<Match> matches;             // search
-            std::vector<std::size_t> prefix_max_end; // search
-            std::vector<std::size_t> matched_lines; // search
-            bool truncated = false;
-            std::string error;
-            bool cancelled = false;
-            double ms = 0.0;
-            uint64_t generation = 0;
-        };
-        PendingResult pending_; // protected by mutex_
+        using PendingResult = std::variant<SearchWorker::LoadResult, SearchWorker::SearchResult>;
+        std::optional<PendingResult> pending_; // protected by mutex_
 
         std::atomic<uint64_t> completed_generation_{0};
 
@@ -175,6 +167,9 @@ namespace kestrel
         bool tail_paused_ = false;
         bool tail_needs_refresh_ = false;
         bool tail_updated_ = false;
+        bool refresh_pending_ = false;
+        bool refresh_search_due_ = false;
+        uint64_t refresh_generation_ = 0;
     };
 
 } // namespace kestrel

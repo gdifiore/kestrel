@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <filesystem>
 #include <thread>
+#include <type_traits>
 
 #if defined(__linux__)
 #include <sys/inotify.h>
@@ -26,37 +27,15 @@ namespace kestrel
         // Callbacks run on the worker thread: they only stash the result. The UI
         // thread applies it in drain_results(); see the note on that method.
         worker_ = std::make_unique<SearchWorker>(
-            [this](std::shared_ptr<Source> source, std::shared_ptr<LineIndex> lines, TimestampIndex timestamps, std::string error, bool cancelled, double load_ms, uint64_t generation)
+            [this](SearchWorker::LoadResult result)
             {
                 std::lock_guard<std::mutex> lock(mutex_);
-                pending_ = PendingResult{};
-                pending_.has_value = true;
-                pending_.is_load = true;
-                pending_.source = std::move(source);
-                pending_.lines = std::move(lines);
-                pending_.timestamps = std::move(timestamps);
-                pending_.error = std::move(error);
-                pending_.cancelled = cancelled;
-                pending_.ms = load_ms;
-                pending_.generation = generation;
+                pending_ = std::move(result);
             },
-            [this](std::vector<Match> &&matches,
-                   std::vector<std::size_t> &&prefix_max_end,
-                   std::vector<std::size_t> &&matched_lines,
-                   bool truncated, std::string &&error,
-                   double scan_ms, uint64_t generation)
+            [this](SearchWorker::SearchResult result)
             {
                 std::lock_guard<std::mutex> lock(mutex_);
-                pending_ = PendingResult{};
-                pending_.has_value = true;
-                pending_.is_load = false;
-                pending_.matches = std::move(matches);
-                pending_.prefix_max_end = std::move(prefix_max_end);
-                pending_.matched_lines = std::move(matched_lines);
-                pending_.truncated = truncated;
-                pending_.error = std::move(error);
-                pending_.ms = scan_ms;
-                pending_.generation = generation;
+                pending_ = std::move(result);
             });
     }
 
@@ -76,8 +55,29 @@ namespace kestrel
             reset_tail_watch();
         else
         {
+            cancel_tail_refresh();
             close_tail_watch();
         }
+    }
+
+    void SearchController::set_tail_paused(bool paused)
+    {
+        if (tail_paused_ == paused)
+            return;
+        tail_paused_ = paused;
+        if (paused)
+            cancel_tail_refresh();
+    }
+
+    void SearchController::cancel_tail_refresh()
+    {
+        if (!refresh_pending_)
+            return;
+        search_generation_ = worker_->next_generation();
+        refresh_pending_ = false;
+        job_pending_ = false;
+        tail_needs_refresh_ = tail_mode_;
+        dirty_ = !pattern_.empty();
     }
 
     void SearchController::close_tail_watch()
@@ -179,7 +179,7 @@ namespace kestrel
 #endif
     }
 
-    void SearchController::consume_tail_events(double now_sec)
+    void SearchController::consume_tail_events(double /*now_sec*/)
     {
         if (!tail_mode_ || !source_)
             return;
@@ -236,61 +236,36 @@ namespace kestrel
 #endif
 
         tail_needs_refresh_ = tail_needs_refresh_ || changed;
-        if (!tail_paused_ && tail_needs_refresh_)
-            reload_tail_source(now_sec);
     }
 
-    void SearchController::reload_tail_source(double now_sec)
+    void SearchController::schedule_tail_refresh()
     {
-        if (!source_ || source_->path().empty())
+        // One active job and one accumulated watcher flag bound refresh work.
+        // A replacement load always takes precedence over following the old file.
+        if (!tail_mode_ || tail_paused_ || !tail_needs_refresh_ || !source_ ||
+            loading_ || job_pending_ || refresh_pending_ || refresh_search_due_)
             return;
-        try
-        {
-            auto next_source = std::make_shared<Source>(Source::from_path(source_->path()));
+        refresh_generation_ = worker_->next_generation();
+        search_generation_ = refresh_generation_;
+        refresh_pending_ = true;
+        job_pending_ = true;
+        tail_needs_refresh_ = false;
+        SearchWorker::Job job;
+        job.type = SearchWorker::JobType::LoadSource;
+        job.file_path = source_->path();
+        job.generation = refresh_generation_;
+        job.refresh = true;
+        worker_->submit_job(std::move(job));
+    }
 
-            // Never mutate lines_ in place: an older Search job may retain it.
-            // Do not infer an append from the file size or compare the previous
-            // mmap at refresh time: an in-place rewrite can update that mapping
-            // too. Rebuild so rotation and truncate-and-rewrite are correct.
-            const auto new_bytes = next_source->bytes();
-            auto next_lines = std::make_shared<LineIndex>(new_bytes);
-
-            source_ = std::move(next_source);
-            lines_ = std::move(next_lines);
-            ts_index_ = TimestampIndex(source_->bytes(), *lines_);
-            // Results belong to the previous byte/line layout. Publish an empty
-            // result set until the replacement scan completes, so filtered UI
-            // consumers cannot dereference stale line numbers after a shrink.
-            matches_.clear();
-            prefix_max_end_.clear();
-            matched_lines_.clear();
-            results_truncated_ = false;
-            compile_error_.clear();
-            last_scan_ms_ = 0.0;
-#if defined(__APPLE__)
-            // A rename/delete event belongs to the old vnode. Attach a new
-            // file watcher to the freshly mapped replacement.
-            reset_tail_watch();
-#endif
-            tail_needs_refresh_ = false;
-            tail_updated_ = true;
-
-            // Cancel work against the old mmap and immediately schedule a
-            // fresh whole-file scan. Stream mode remains deliberately absent:
-            // the benchmark shows its throughput potential, but it needs a
-            // separate result model to preserve highlight semantics.
-            std::lock_guard<std::mutex> lock(mutex_);
-            search_generation_ = worker_->next_generation();
-            dirty_ = true;
-            last_edit_sec_ = now_sec - static_cast<double>(debounce_ms_) / 1000.0;
-            completed_generation_.fetch_add(1, std::memory_order_release);
-        }
-        catch (const SourceError &e)
-        {
-            // Rotation briefly leaves no path to map. Keep the pending marker;
-            // a later directory event will retry without losing the snapshot.
-            spdlog::warn("follow reload failed: {}", e.what());
-        }
+    void SearchController::clear_search_results()
+    {
+        matches_.clear();
+        prefix_max_end_.clear();
+        matched_lines_.clear();
+        results_truncated_ = false;
+        compile_error_.clear();
+        last_scan_ms_ = 0.0;
     }
 
     void SearchController::load_source(std::string_view path)
@@ -303,13 +278,11 @@ namespace kestrel
         std::lock_guard<std::mutex> lock(mutex_);
         search_generation_ = worker_->next_generation();
         load_generation_ = search_generation_;
-        pending_ = PendingResult{}; // drop any result captured for the old source
+        refresh_pending_ = false;
+        refresh_search_due_ = false;
+        pending_.reset(); // drop any result captured for the old source
         pattern_.clear();
-        matches_.clear();
-        prefix_max_end_.clear();
-        matched_lines_.clear();
-        results_truncated_ = false;
-        compile_error_.clear();
+        clear_search_results();
         dirty_ = false;
         job_pending_ = false;
         loading_ = false;
@@ -325,12 +298,14 @@ namespace kestrel
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            pending_ = PendingResult{}; // drop any result from a prior source/scan
+            pending_.reset(); // drop any result from a prior source/scan
             loading_ = true;
             loading_error_.clear();
             load_progress_ = std::make_shared<SearchWorker::LoadProgress>();
             search_generation_ = generation; // invalidate in-flight scans for the old source
             load_generation_ = generation;
+            refresh_pending_ = false;
+            refresh_search_due_ = false;
             job_pending_ = true;
         }
 
@@ -377,9 +352,10 @@ namespace kestrel
             return;
         search_generation_ = worker_->next_generation();
         load_generation_ = search_generation_;
+        refresh_pending_ = false;
         loading_ = false;
         job_pending_ = false;
-        pending_ = PendingResult{};
+        pending_.reset();
         if (load_progress_)
             load_progress_->phase.store(SearchWorker::LoadPhase::Cancelled, std::memory_order_relaxed);
     }
@@ -389,16 +365,15 @@ namespace kestrel
         source_.reset();
         ++source_revision_;
         lines_.reset();
+        ts_index_ = TimestampIndex{};
 
         std::lock_guard<std::mutex> lock(mutex_);
-        pending_ = PendingResult{}; // drop any result captured for the old source
-        matches_.clear();
-        prefix_max_end_.clear();
-        matched_lines_.clear();
-        results_truncated_ = false;
-        compile_error_.clear();
+        pending_.reset(); // drop any result captured for the old source
+        clear_search_results();
         search_generation_ = worker_->next_generation();
         load_generation_ = search_generation_;
+        refresh_pending_ = false;
+        refresh_search_due_ = false;
         dirty_ = false;
         job_pending_ = false;
         loading_ = false;
@@ -426,7 +401,7 @@ namespace kestrel
         last_edit_sec_ = 0.0; // tick() will stamp on first call
 
         std::lock_guard<std::mutex> lock(mutex_);
-        search_generation_ = worker_->next_generation();
+        search_generation_ = worker_->next_search_generation();
         dirty_ = true;
     }
 
@@ -437,6 +412,7 @@ namespace kestrel
         consume_tail_events(now_sec);
         // Apply any worker result first, on this (UI) thread.
         drain_results();
+        schedule_tail_refresh();
 
         // Handle debounced pattern updates
         bool should_submit = false;
@@ -486,12 +462,8 @@ namespace kestrel
             if (pattern_.empty())
             {
                 // Empty pattern: clear matches immediately (no lock needed - UI thread only)
-                matches_.clear();
-                prefix_max_end_.clear();
-                matched_lines_.clear();
-                results_truncated_ = false;
-                compile_error_.clear();
-                last_scan_ms_ = 0.0;
+                clear_search_results();
+                refresh_search_due_ = false;
                 completed_generation_.fetch_add(1, std::memory_order_release);
             }
             else
@@ -518,6 +490,7 @@ namespace kestrel
             if (generation != search_generation_)
                 return;
             job_pending_ = true;
+            submitted_search_generation_ = generation;
         }
 
         SearchWorker::Job job{
@@ -540,73 +513,94 @@ namespace kestrel
     // "job done" to "result applied", which wait_for_completion relies on.
     void SearchController::drain_results()
     {
-        PendingResult r;
+        std::optional<PendingResult> result;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (!pending_.has_value)
-                return;
-            r = std::move(pending_);
-            pending_ = PendingResult{};
-            job_pending_ = false;
-            if (r.is_load && r.generation == load_generation_)
-                loading_ = false;
+            result.swap(pending_);
         }
-
-        if (r.is_load)
+        if (!result)
+            return;
+        std::visit([this](auto &&value)
         {
+            using Result = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<Result, SearchWorker::LoadResult>)
+                apply_load_result(std::move(value));
+            else
+                apply_search_result(std::move(value));
+        }, std::move(*result));
+    }
+
+    void SearchController::apply_load_result(SearchWorker::LoadResult result)
+    {
+        if (result.generation != (result.refresh ? refresh_generation_ : load_generation_))
+            return;
+        if (result.refresh && !refresh_pending_)
+            return;
+        job_pending_ = false;
+        if (result.refresh)
+        {
+            refresh_pending_ = false;
+            if (!tail_mode_ || tail_paused_ || result.cancelled)
             {
-                std::lock_guard<std::mutex> lock(mutex_);
-                if (r.generation != load_generation_)
-                    return;
-            }
-            if (r.cancelled)
-            {
-                // Cancellation keeps the current source visible and still
-                // invalidates UI caches that watch completion generation.
-                completed_generation_.fetch_add(1, std::memory_order_release);
+                tail_needs_refresh_ = tail_mode_;
                 return;
             }
-            if (r.error.empty())
+            if (!result.error.empty())
             {
-                source_ = std::move(r.source);
-                ++source_revision_;
-                lines_ = std::move(r.lines);
-                ts_index_ = std::move(r.timestamps);
-
-                // Clear search state
-                pattern_.clear();
-                matches_.clear();
-                prefix_max_end_.clear();
-                matched_lines_.clear();
-                results_truncated_ = false;
-                compile_error_.clear();
-                last_scan_ms_ = r.ms;
-
-                std::lock_guard<std::mutex> lock(mutex_);
-                dirty_ = false;
-                reset_tail_watch();
-            }
-            else
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                loading_error_ = std::move(r.error);
+                spdlog::warn("follow reload failed: {}", result.error);
+                return; // Keep the visible snapshot; the next event retries.
             }
         }
         else
         {
+            loading_ = false;
+            if (result.cancelled)
+                return;
+            if (!result.error.empty())
             {
-                std::lock_guard<std::mutex> lock(mutex_);
-                if (r.generation != search_generation_)
-                    return;
+                loading_error_ = std::move(result.error);
+                return;
             }
-            matches_ = std::move(r.matches);
-            prefix_max_end_ = std::move(r.prefix_max_end);
-            matched_lines_ = std::move(r.matched_lines);
-            results_truncated_ = r.truncated;
-            compile_error_ = std::move(r.error);
-            last_scan_ms_ = r.ms;
+            ++source_revision_;
         }
+        source_ = std::move(result.source);
+        lines_ = std::move(result.lines);
+        ts_index_ = std::move(result.timestamps);
+        clear_search_results();
+        last_scan_ms_ = result.ms;
+        dirty_ = !pattern_.empty();
+        refresh_search_due_ = result.refresh && dirty_;
+        last_edit_sec_ = 0.0;
+        if (result.refresh)
+        {
+            tail_updated_ = true;
+#if defined(__APPLE__)
+            reset_tail_watch();
+#endif
+        }
+        else
+        {
+            tail_needs_refresh_ = false;
+            reset_tail_watch();
+        }
+        completed_generation_.fetch_add(1, std::memory_order_release);
+    }
 
+    void SearchController::apply_search_result(SearchWorker::SearchResult result)
+    {
+        // An obsolete completion must not mark a newer load/refresh as idle.
+        if (loading_ || refresh_pending_ || result.generation != submitted_search_generation_)
+            return;
+        job_pending_ = false;
+        if (result.generation != search_generation_)
+            return;
+        refresh_search_due_ = false;
+        matches_ = std::move(result.matches);
+        prefix_max_end_ = std::move(result.prefix_max_end);
+        matched_lines_ = std::move(result.matched_lines);
+        results_truncated_ = result.truncated;
+        compile_error_ = std::move(result.error);
+        last_scan_ms_ = result.ms;
         completed_generation_.fetch_add(1, std::memory_order_release);
     }
 

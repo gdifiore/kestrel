@@ -231,7 +231,7 @@ TEST_CASE("empty pattern clears matches on rescan")
     CHECK(sc.pattern_empty());
 }
 
-TEST_CASE("load_source resets matches but retains pattern")
+TEST_CASE("load_source resets matches and pattern")
 {
     TempFile a("foo\n");
     TempFile b("bar\n");
@@ -242,7 +242,7 @@ TEST_CASE("load_source resets matches but retains pattern")
     REQUIRE(sc.matches().size() == 1);
 
     sc.load_source(b.str());
-    // load_source clears pattern_ and matches_; dirty_ set so next tick rescans
+    // A synchronous source switch clears the old query and its results.
     rescan_now(sc);
     CHECK(sc.matches().empty());
     CHECK(sc.pattern_empty());
@@ -427,4 +427,104 @@ TEST_CASE("follow replacement drops old line numbers before replacement scan com
     CHECK_FALSE(sc.results_truncated());
     sc.wait_for_completion();
     CHECK(sc.matches().empty());
+}
+
+TEST_CASE("query edits do not cancel an initial or replacement asynchronous load")
+{
+    TempFile first("first\n");
+    TempFile second("second\n");
+    SearchController sc;
+    for (const auto &path : {first.str(), second.str()})
+    {
+        sc.load_source_async(path);
+        sc.set_pattern("[a-z]+", HS_FLAG_CASELESS);
+        sc.wait_for_completion();
+        REQUIRE(sc.has_source());
+        CHECK(sc.get_loading_error().empty());
+        CHECK(sc.load_progress().phase == kestrel::LoadPhase::Complete);
+        REQUIRE(sc.matches().size() == 1);
+        CHECK(sc.matches()[0].end == (path == first.str() ? 5 : 6));
+        sc.set_pattern("", 0);
+    }
+}
+
+TEST_CASE("follow acquisition is deferred and a paused completion cannot publish")
+{
+    TempFile tf("old\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_tail_mode(true);
+    {
+        std::ofstream out(tf.str(), std::ios::app | std::ios::binary);
+        out << "new\n";
+    }
+    // The event is queued before this tick. Acquisition may finish on the worker,
+    // but this tick only schedules it and cannot publish its own completion.
+    sc.tick(1.0);
+    CHECK(sc.source_bytes().size() == 4);
+    CHECK_FALSE(sc.tail_updated_last_tick());
+    sc.set_tail_paused(true);
+    sc.wait_for_completion();
+    CHECK(sc.source_bytes().size() == 4);
+    sc.set_tail_paused(false);
+    sc.wait_for_completion();
+    CHECK(sc.source_bytes().size() == 8);
+    CHECK(sc.line_index().line_count() == 2);
+}
+
+TEST_CASE("follow completion cannot replace a newly selected source")
+{
+    TempFile old("old\n");
+    TempFile replacement("selected\n");
+    SearchController sc;
+    sc.load_source(old.str());
+    sc.set_tail_mode(true);
+    {
+        std::ofstream out(old.str(), std::ios::app | std::ios::binary);
+        out << "append\n";
+    }
+    sc.tick(1.0); // enqueue refresh without applying it
+    sc.load_source_async(replacement.str());
+    sc.wait_for_completion();
+    CHECK(std::string_view(sc.source_bytes().data(), sc.source_bytes().size()) == "selected\n");
+    CHECK(sc.line_index().line_count() == 1);
+}
+
+TEST_CASE("follow events coalesce while preserving the current query")
+{
+    TempFile tf("foo\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_pattern("foo", 0);
+    rescan_now(sc);
+    sc.set_tail_mode(true);
+    const auto revision = sc.source_revision();
+    {
+        std::ofstream out(tf.str(), std::ios::app | std::ios::binary);
+        out << "foo\n";
+    }
+    sc.tick(1.0);
+    for (int i = 0; i < 20; ++i)
+    {
+        std::ofstream out(tf.str(), std::ios::app | std::ios::binary);
+        out << "foo\n";
+    }
+    sc.set_pattern("FOO", HS_FLAG_CASELESS); // must not cancel acquisition
+    sc.wait_for_completion();
+    CHECK(sc.source_bytes().size() == 88);
+    CHECK(sc.line_index().line_count() == 22);
+    CHECK(sc.matches().size() == 22);
+    CHECK(sc.matched_lines().size() == 22);
+    CHECK(sc.source_revision() == revision);
+}
+
+TEST_CASE("clearing a source drops its timestamp index and timing")
+{
+    TempFile tf("2026-11-05T12:00:00Z foo\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    REQUIRE_FALSE(sc.timestamp_index().empty());
+    sc.clear_source();
+    CHECK(sc.timestamp_index().empty());
+    CHECK(sc.last_scan_ms() == 0.0);
 }
