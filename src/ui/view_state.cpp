@@ -5,6 +5,43 @@
 
 namespace kestrel
 {
+    namespace
+    {
+        void synchronize_time_filter(ViewFilters::Time &time,
+                                     const SearchController &search)
+        {
+            if (!search.has_source())
+            {
+                time.source_initialized = false;
+                return;
+            }
+            const auto &timestamps = search.timestamp_index();
+            if (timestamps.empty())
+            {
+                // A timestamp-free follow snapshot must not discard a narrowed
+                // selection before timestamps reappear in a later refresh.
+                if (time.source_revision != search.source_revision())
+                    time.source_initialized = false;
+                return;
+            }
+            const bool new_source = !time.source_initialized ||
+                                    time.source_revision != search.source_revision();
+            const bool full_range = time.start == time.source_min &&
+                                    time.end == time.source_max;
+            // Follow extends a full-range selection, but preserves an interval
+            // the user deliberately narrowed, even across rotation or truncation.
+            if (new_source || full_range)
+            {
+                time.start = timestamps.min_ts();
+                time.end = timestamps.max_ts();
+            }
+            time.source_min = timestamps.min_ts();
+            time.source_max = timestamps.max_ts();
+            time.source_revision = search.source_revision();
+            time.source_initialized = true;
+        }
+    }
+
     // Build/refresh in.layout.view_lines once per frame. Skips work when none
     // of the inputs (time filter range/state, regex filter view, completed
     // scan generation) changed since last frame.
@@ -97,6 +134,7 @@ namespace kestrel
 
     void prepare_view_state(UiInputs &in, const SearchController &search)
     {
+        synchronize_time_filter(in.layout.filters.time, search);
         update_view_cache(in, search);
         if (!search.has_source())
         {

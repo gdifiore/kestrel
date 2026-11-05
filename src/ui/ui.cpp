@@ -14,11 +14,10 @@ namespace kestrel
         // lag that makes the UI jitter while the window is being resized.
         draw_main_menu(in);
         draw_search_bar(in, search);  // sets search_bar_h
-        draw_toolbar_row(in, search); // uses search_bar_h, sets toolbar_h
         draw_status_bar(in, search);  // sets status_bar_h
         prepare_view_state(in, search);
-        draw_results(in, search); // uses all three
-        draw_minimap(in, search); // uses all three
+        draw_results(in, search); // uses panel heights
+        draw_minimap(in, search); // uses panel heights
         draw_settings_popup(in);
         draw_help_popup(in);
         draw_open_dialog(in);

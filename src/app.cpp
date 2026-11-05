@@ -89,7 +89,7 @@ namespace kestrel
             // bar) from main viewport so PgDn doesn't overshoot the viewport.
             float line_height = ImGui::GetTextLineHeightWithSpacing();
             float vp_h = ImGui::GetMainViewport()->WorkSize.y;
-            float chrome = ui.layout.search_bar_h + ui.layout.toolbar_h + ui.layout.status_bar_h;
+            float chrome = ui.layout.search_bar_h + ui.layout.status_bar_h;
             float results_h = std::max(line_height, vp_h - chrome);
             int page_step = std::max(1, static_cast<int>(results_h / line_height) - 1);
 

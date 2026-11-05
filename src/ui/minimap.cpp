@@ -24,7 +24,7 @@ namespace kestrel
         MinimapGeometry compute_geometry(const UiInputs &in)
         {
             ImGuiViewport *vp = ImGui::GetMainViewport();
-            const float top_h = in.layout.search_bar_h + in.layout.toolbar_h;
+            const float top_h = in.layout.search_bar_h;
             const float w = minimap_width();
             return {
                 vp->WorkPos.x + vp->WorkSize.x - w,

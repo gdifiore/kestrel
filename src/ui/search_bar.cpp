@@ -105,28 +105,21 @@ namespace kestrel
 
         auto &tf = in.layout.filters.time;
 
-        // Reset bounds on new file / new timestamp range.
-        if (ts.min_ts() != tf.source_min || ts.max_ts() != tf.source_max)
-        {
-            tf.source_min = ts.min_ts();
-            tf.source_max = ts.max_ts();
-            tf.start = ts.min_ts();
-            tf.end = ts.max_ts();
-        }
-
         ImGui::Checkbox("time", &tf.active);
         if (!tf.active)
         {
             return;
         }
 
-        const bool span_multiday = (ts.max_ts() - ts.min_ts()) >= 24 * 3600;
+        // A narrowed selection survives follow rotation, including when its
+        // interval lies outside the replacement file's timestamp range.
+        int64_t lo = std::min(ts.min_ts(), tf.start);
+        int64_t hi = std::max(ts.max_ts(), tf.end);
+        const bool span_multiday = (hi - lo) >= 24 * 3600;
         char sbuf[32], ebuf[32];
         format_time_label(tf.start, span_multiday, sbuf, sizeof(sbuf));
         format_time_label(tf.end, span_multiday, ebuf, sizeof(ebuf));
 
-        int64_t lo = ts.min_ts();
-        int64_t hi = ts.max_ts();
         ImGui::SetNextItemWidth(200.0F * s);
         ImGui::SliderScalar("##ts_start", ImGuiDataType_S64,
                             &tf.start, &lo, &tf.end, sbuf);
@@ -208,12 +201,6 @@ namespace kestrel
             in.layout.search_bar_h = ImGui::GetWindowHeight();
         }
         ImGui::End();
-    }
-
-    void draw_toolbar_row(UiInputs &in, const SearchController &search)
-    {
-        (void)search;
-        in.layout.toolbar_h = 0.0F;
     }
 
 } // namespace kestrel
