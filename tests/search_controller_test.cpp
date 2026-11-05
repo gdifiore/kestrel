@@ -116,29 +116,29 @@ TEST_CASE("bad regex populates compile_error, leaves matches empty")
     CHECK(sc.matches().empty());
 }
 
-TEST_CASE("prefilter rejects unbalanced paren")
+TEST_CASE("compiler rejects unbalanced paren")
 {
     TempFile tf("abc\n");
     SearchController sc;
     sc.load_source(tf.str());
     sc.set_pattern("(unclosed", 0);
     rescan_now(sc);
-    CHECK(sc.compile_error().find("unmatched") != std::string::npos);
+    CHECK_FALSE(sc.compile_error().empty());
     CHECK(sc.matches().empty());
 }
 
-TEST_CASE("prefilter rejects trailing backslash")
+TEST_CASE("compiler rejects trailing backslash")
 {
     TempFile tf("abc\n");
     SearchController sc;
     sc.load_source(tf.str());
     sc.set_pattern("foo\\", 0);
     rescan_now(sc);
-    CHECK(sc.compile_error().find("trailing") != std::string::npos);
+    CHECK_FALSE(sc.compile_error().empty());
     CHECK(sc.matches().empty());
 }
 
-TEST_CASE("prefilter accepts escaped class chars")
+TEST_CASE("compiler accepts escaped class chars")
 {
     TempFile tf("a1b\n");
     SearchController sc;
@@ -360,4 +360,71 @@ TEST_CASE("follow mode rebuilds its line index after a larger file replacement")
     CHECK(sc.line_index().line_count() == 2);
     CHECK(sc.line_index().line_start(0) == 0);
     CHECK(sc.line_index().line_start(1) == 6);
+}
+
+TEST_CASE("out-of-start-order scanner callbacks produce searchable ordered results")
+{
+    TempFile tf("a\nb\nz\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_pattern("a[\\s\\S]*z|b", 0);
+    rescan_now(sc);
+
+    REQUIRE(sc.matches().size() == 2);
+    CHECK(sc.matches()[0].start == 0);
+    CHECK(sc.matches()[0].end == 5);
+    CHECK(sc.matches()[1].start == 2);
+    CHECK(sc.matches()[1].end == 3);
+    CHECK(sc.matched_lines() == std::vector<std::size_t>{0, 1});
+    CHECK(sc.matches_before(1) == 1);
+    CHECK(sc.matches_after(1) == 1);
+    const auto overlapping = sc.matches_in_range(4, 5);
+    REQUIRE_FALSE(overlapping.empty());
+    CHECK(overlapping.front().start == 0);
+    CHECK(overlapping.front().end == 5);
+}
+
+TEST_CASE("quoted regex metacharacters reach the actual regex compiler")
+{
+    TempFile tf("literal ([\\\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    for (const auto *pattern : {"\\Q(\\E", "\\Q[\\E", "\\Q([\\\\E"})
+    {
+        sc.set_pattern(pattern, 0);
+        rescan_now(sc);
+        CHECK(sc.compile_error().empty());
+        CHECK_FALSE(sc.matches().empty());
+    }
+}
+
+TEST_CASE("follow replacement drops old line numbers before replacement scan completes")
+{
+    TempFile tf("a\nb\nz z\n");
+    TempFile replacement("x\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_match_limit(1);
+    sc.set_pattern("z", 0);
+    rescan_now(sc);
+    REQUIRE(sc.matched_lines() == std::vector<std::size_t>{2});
+    REQUIRE(sc.results_truncated());
+    sc.set_tail_mode(true);
+    const auto before = sc.completed_generation();
+    std::filesystem::rename(replacement.str(), tf.str());
+
+    for (int i = 0; i < 100 && sc.source_bytes().size() != 2; ++i)
+    {
+        sc.tick(2.0 + i * 0.001);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(sc.source_bytes().size() == 2);
+    CHECK(sc.line_index().line_count() == 1);
+    CHECK(sc.completed_generation() > before);
+    CHECK(sc.matches().empty());
+    CHECK(sc.matched_lines().empty());
+    CHECK(sc.matches_in_range(0, 2).empty());
+    CHECK_FALSE(sc.results_truncated());
+    sc.wait_for_completion();
+    CHECK(sc.matches().empty());
 }

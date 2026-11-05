@@ -142,6 +142,7 @@ add_executable(kestrel
     src/app.cpp
     src/ui/window.cpp
     src/ui/ui.cpp
+    src/ui/view_state.cpp
     src/ui/main_menu.cpp
     src/ui/search_bar.cpp
     src/ui/results.cpp
