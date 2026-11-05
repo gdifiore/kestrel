@@ -438,6 +438,7 @@ namespace kestrel
                 }
             }
 
+            prepare_view_state(ui, search);
             handle_cursor_input(ui, search);
             handle_keyboard_shortcuts(ui, search);
 

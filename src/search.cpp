@@ -21,56 +21,6 @@
 namespace kestrel
 {
 
-    namespace
-    {
-        // Catch the common mid-typing regex errors (unmatched '(' or '[',
-        // trailing '\') before paying the ~227µs hs_compile + worker round-trip.
-        // Returns empty string when the pattern looks syntactically plausible;
-        // otherwise a short user-visible reason.
-        std::string quick_regex_validate(std::string_view pat)
-        {
-            int paren = 0;
-            bool in_class = false;
-            bool class_first = false; // ']' is literal at start of class
-            for (std::size_t i = 0; i < pat.size(); ++i)
-            {
-                char c = pat[i];
-                if (c == '\\')
-                {
-                    if (i + 1 == pat.size())
-                        return "trailing '\\'";
-                    ++i;
-                    if (in_class)
-                        class_first = false; // escaped char consumed first class slot
-                    continue;
-                }
-                if (in_class)
-                {
-                    if (c == ']' && !class_first)
-                        in_class = false;
-                    class_first = false;
-                }
-                else if (c == '[')
-                {
-                    in_class = true;
-                    class_first = true;
-                }
-                else if (c == '(')
-                    ++paren;
-                else if (c == ')')
-                {
-                    if (--paren < 0)
-                        return "unmatched ')'";
-                }
-            }
-            if (in_class)
-                return "unterminated '['";
-            if (paren > 0)
-                return "unmatched '('";
-            return {};
-        }
-    }
-
     SearchController::SearchController()
     {
         // Callbacks run on the worker thread: they only stash the result. The UI
@@ -308,6 +258,15 @@ namespace kestrel
             source_ = std::move(next_source);
             lines_ = std::move(next_lines);
             ts_index_ = TimestampIndex(source_->bytes(), *lines_);
+            // Results belong to the previous byte/line layout. Publish an empty
+            // result set until the replacement scan completes, so filtered UI
+            // consumers cannot dereference stale line numbers after a shrink.
+            matches_.clear();
+            prefix_max_end_.clear();
+            matched_lines_.clear();
+            results_truncated_ = false;
+            compile_error_.clear();
+            last_scan_ms_ = 0.0;
 #if defined(__APPLE__)
             // A rename/delete event belongs to the old vnode. Attach a new
             // file watcher to the freshly mapped replacement.
@@ -530,16 +489,6 @@ namespace kestrel
                 matched_lines_.clear();
                 results_truncated_ = false;
                 compile_error_.clear();
-                last_scan_ms_ = 0.0;
-                completed_generation_.fetch_add(1, std::memory_order_release);
-            }
-            else if (std::string reason = quick_regex_validate(pattern_); !reason.empty())
-            {
-                matches_.clear();
-                prefix_max_end_.clear();
-                matched_lines_.clear();
-                results_truncated_ = false;
-                compile_error_ = "regex syntax: " + reason;
                 last_scan_ms_ = 0.0;
                 completed_generation_.fetch_add(1, std::memory_order_release);
             }

@@ -10,6 +10,18 @@ namespace kestrel
 {
     namespace
     {
+        void order_matches(std::vector<Match> &matches)
+        {
+            // Callbacks arrive in end-offset order. UI binary searches and the
+            // forward-only line conversion below require start-offset order.
+            const auto less = [](const Match &a, const Match &b)
+            {
+                return a.start < b.start || (a.start == b.start && a.end < b.end);
+            };
+            if (!std::is_sorted(matches.begin(), matches.end(), less))
+                std::sort(matches.begin(), matches.end(), less);
+        }
+
         void build_search_indexes(const std::vector<Match> &matches,
                                   const LineIndex *lines,
                                   std::vector<std::size_t> &prefix_max_end,
@@ -216,6 +228,7 @@ namespace kestrel
             outcome.matches = scanner.scan(
                 std::string_view{span.data(), span.size()},
                 &generation_, job.generation, job.match_limit, &outcome.truncated);
+            order_matches(outcome.matches);
             build_search_indexes(outcome.matches, job.lines.get(),
                                  outcome.prefix_max_end, outcome.matched_lines);
             spdlog::debug("worker found {} matches", outcome.matches.size());
