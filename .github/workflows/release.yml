@@ -20,7 +20,7 @@ jobs:
           - runner: ubuntu-latest
             platform: linux-x86_64
             archive_extension: tar.gz
-          - runner: macos-14
+          - runner: macos-15
             platform: macos-arm64
             archive_extension: tar.gz
 
@@ -41,7 +41,9 @@ jobs:
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
-        run: brew install boost ragel sqlite pkg-config
+        run: |
+          brew install boost ragel sqlite pkg-config
+          echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
 
       - name: Configure CMake
         run: >
