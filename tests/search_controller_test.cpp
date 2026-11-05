@@ -437,7 +437,7 @@ TEST_CASE("query edits do not cancel an initial or replacement asynchronous load
     for (const auto &path : {first.str(), second.str()})
     {
         sc.load_source_async(path);
-        sc.set_pattern("[a-z]+", HS_FLAG_CASELESS);
+        sc.set_pattern("FIRST|SECOND", HS_FLAG_CASELESS);
         sc.wait_for_completion();
         REQUIRE(sc.has_source());
         CHECK(sc.get_loading_error().empty());
@@ -580,4 +580,31 @@ TEST_CASE("disabling follow and clearing source reject queued refreshes")
     CHECK_FALSE(sc.has_source());
     CHECK(sc.timestamp_index().empty());
     CHECK(sc.matches().empty());
+}
+
+TEST_CASE("sustained follow events allow searches between snapshots")
+{
+    TempFile tf("foo\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_pattern("foo", 0);
+    rescan_now(sc);
+    sc.set_tail_mode(true);
+    bool searched_refresh = false;
+    for (int i = 0; i < 1000 && !searched_refresh; ++i)
+    {
+        // Keep an event ready on every tick, including each publication tick.
+        // Refresh priority without fairness would repeatedly clear results and
+        // dispatch another load without ever searching the new snapshot.
+        {
+            std::ofstream out(tf.str(), std::ios::app | std::ios::binary);
+            out << "foo\n";
+        }
+        sc.tick(2.0 + i * 0.001);
+        searched_refresh = sc.source_bytes().size() > 4 && !sc.matches().empty();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(searched_refresh);
+    sc.set_tail_mode(false);
+    sc.wait_for_completion();
 }
