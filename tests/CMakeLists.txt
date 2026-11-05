@@ -13,3 +13,5 @@ add_kestrel_test(timestamp_index_test timestamp_index_test.cpp)
 add_kestrel_test(search_controller_test search_controller_test.cpp)
 add_kestrel_test(parse_cli_test parse_cli_test.cpp)
 add_kestrel_test(config_test config_test.cpp)
+
+add_kestrel_test(view_state_test view_state_test.cpp ../src/ui/view_state.cpp)

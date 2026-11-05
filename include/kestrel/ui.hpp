@@ -261,6 +261,10 @@ namespace kestrel
 
     void draw_ui(UiInputs &inputs, const SearchController &search);
 
+    // Refresh derived view rows and clamp positions to the current source before
+    // keyboard input or rendering can consume a source replaced by follow mode.
+    void prepare_view_state(UiInputs &inputs, const SearchController &search);
+
     // Maps display rows ↔ source lines for the current frame's view. The view
     // is one of: full source (identity), regex-filtered (matched lines only),
     // or custom (regex ∩ time-filter, materialized in layout.view_lines).
