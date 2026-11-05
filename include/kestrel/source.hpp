@@ -1,5 +1,7 @@
 #pragma once
 
+#include "kestrel/load_progress.hpp"
+
 #include <cstddef>
 #include <span>
 #include <stdexcept>
@@ -13,7 +15,11 @@ namespace kestrel
     class Source
     {
     public:
-        static Source from_path(std::string_view path);
+        // Captures a stable, privately owned file snapshot. The temporary
+        // backing file may require space up to the input size when reflinks
+        // are unavailable, using RAM/swap if the system temp directory is tmpfs.
+        // Concurrent rewrites during copying are not an atomic snapshot.
+        static Source from_path(std::string_view path, ProgressCallback progress = {});
 
         ~Source();
         Source(Source &&obj) noexcept;

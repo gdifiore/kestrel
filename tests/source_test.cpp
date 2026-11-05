@@ -127,3 +127,74 @@ TEST_CASE("larger file size matches")
     CHECK(s.bytes().front() == 'x');
     CHECK(s.bytes().back() == 'x');
 }
+
+TEST_CASE("snapshot survives truncating its original file")
+{
+    // Cross several pages: a live-inode mmap faults with SIGBUS here.
+    const std::string payload(128 * 1024, 'x');
+    TempFile tf(payload);
+    Source source = Source::from_path(tf.str());
+    std::filesystem::resize_file(tf.str(), 0);
+    REQUIRE(source.bytes().size() == payload.size());
+    CHECK(std::string_view(source.bytes().data(), source.bytes().size()) == payload);
+    CHECK(Source::from_path(tf.str()).bytes().empty());
+}
+
+TEST_CASE("snapshot survives same-size rewrite and unlink")
+{
+    const std::string payload(128 * 1024, 'a');
+    TempFile tf(payload);
+    Source original = Source::from_path(tf.str());
+    {
+        std::ofstream out(tf.str(), std::ios::binary);
+        out << std::string(payload.size(), 'b');
+    }
+    Source replacement = Source::from_path(tf.str());
+    std::filesystem::remove(tf.str());
+    CHECK(std::string_view(original.bytes().data(), original.bytes().size()) == payload);
+    CHECK(std::string_view(replacement.bytes().data(), replacement.bytes().size()) ==
+          std::string(payload.size(), 'b'));
+}
+
+TEST_CASE("snapshot handles truncation between stat and capture")
+{
+    TempFile tf(std::string(2 * 1024 * 1024, 'x'));
+    bool truncated = false;
+    Source source = Source::from_path(tf.str(), [&](std::size_t completed, std::size_t total)
+    {
+        if (!truncated)
+        {
+            CHECK(completed == 0);
+            CHECK(total == 2 * 1024 * 1024);
+            std::filesystem::resize_file(tf.str(), 0);
+            truncated = true;
+        }
+        return true;
+    });
+    CHECK(truncated);
+    CHECK(source.bytes().empty());
+}
+
+TEST_CASE("snapshot acquisition supports cancellation before and during capture")
+{
+    TempFile tf(std::string(2 * 1024 * 1024, 'x'));
+    CHECK_THROWS_AS(Source::from_path(tf.str(), [](std::size_t, std::size_t)
+                                    { return false; }), kestrel::LoadCancelled);
+    bool started = false;
+    CHECK_THROWS_AS(Source::from_path(tf.str(), [&](std::size_t, std::size_t)
+    {
+        if (!started)
+        {
+            started = true;
+            return true;
+        }
+        return false;
+    }), kestrel::LoadCancelled);
+    // Cancellation releases all private storage and leaves the input intact.
+    CHECK(Source::from_path(tf.str()).bytes().size() == 2 * 1024 * 1024);
+}
+
+TEST_CASE("from_path rejects directories")
+{
+    CHECK_THROWS_AS(Source::from_path(std::filesystem::temp_directory_path().string()), SourceError);
+}
