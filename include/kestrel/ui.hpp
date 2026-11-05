@@ -146,8 +146,10 @@ namespace kestrel
             bool active = false;
             int64_t start = 0;
             int64_t end = 0;
-            // Snapshot of TimestampIndex bounds; on change, slider bounds are
-            // reset to the new [min, max].
+            // Source identity and previous bounds distinguish a new file from
+            // a follow refresh of the same file.
+            uint64_t source_revision = 0;
+            bool source_initialized = false;
             int64_t source_min = 0;
             int64_t source_max = 0;
         } time;
@@ -156,7 +158,6 @@ namespace kestrel
     struct Layout
     {
         float search_bar_h = 0.0f;
-        float toolbar_h = 0.0f;
         float status_bar_h = 0.0f;
         ViewFilters filters;
         int matches_before = 0;
