@@ -41,6 +41,7 @@ namespace kestrel
         LoadProgressSnapshot load_progress() const noexcept;
         void cancel_loading();
         void clear_source();
+        uint64_t source_revision() const noexcept { return source_revision_; }
         bool has_source() const noexcept { return source_ != nullptr; }
         std::span<const char> source_bytes() const;
         const LineIndex &line_index() const; // precondition: has_source()
@@ -99,6 +100,7 @@ namespace kestrel
         void consume_tail_events(double now_sec);
         void reload_tail_source(double now_sec);
 
+        uint64_t source_revision_ = 0; // Logical source changes; follow updates retain identity.
         std::shared_ptr<Source> source_;
         std::shared_ptr<LineIndex> lines_;
         TimestampIndex ts_index_;

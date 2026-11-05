@@ -296,6 +296,7 @@ namespace kestrel
     void SearchController::load_source(std::string_view path)
     {
         source_ = std::make_shared<Source>(Source::from_path(path));
+        ++source_revision_;
         lines_ = std::make_shared<LineIndex>(source_->bytes());
         ts_index_ = TimestampIndex(source_->bytes(), *lines_);
 
@@ -386,6 +387,7 @@ namespace kestrel
     void SearchController::clear_source()
     {
         source_.reset();
+        ++source_revision_;
         lines_.reset();
 
         std::lock_guard<std::mutex> lock(mutex_);
@@ -567,6 +569,7 @@ namespace kestrel
             if (r.error.empty())
             {
                 source_ = std::move(r.source);
+                ++source_revision_;
                 lines_ = std::move(r.lines);
                 ts_index_ = std::move(r.timestamps);
 
