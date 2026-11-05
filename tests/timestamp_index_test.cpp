@@ -39,3 +39,33 @@ TEST_CASE("progress callback can cancel timestamp indexing")
                                              { return false; }),
                     kestrel::LoadCancelled);
 }
+
+TEST_CASE("timestamp index preserves complete fractional seconds and timezone suffixes")
+{
+    const std::string text =
+        "2026-11-05T12:00:00.123456789+02:00 positive offset\n"
+        "2026-11-05T04:30:00.123456789-05:30 negative offset\n"
+        "2026-11-05T10:00:00.123456789123456789Z long fraction\n"
+        "2026-11-05T10:00:00.123456789123456789 no timezone\n";
+    kestrel::LineIndex lines(view(text));
+    kestrel::TimestampIndex timestamps(view(text), lines);
+    const auto expected = kestrel::parse_iso8601(view("2026-11-05T10:00:00Z"));
+    REQUIRE(lines.line_count() == 4);
+    for (std::size_t i = 0; i < lines.line_count(); ++i)
+        CHECK(timestamps.at(i) == expected);
+    CHECK(timestamps.min_ts() == expected);
+    CHECK(timestamps.max_ts() == expected);
+}
+
+TEST_CASE("timestamp index rejects malformed suffixes beyond the old prefix limit")
+{
+    const std::string text =
+        "2026-11-05T10:00:00.123456789123456789+24:00 malformed offset\n"
+        "2026-11-05T10:00:00.123456789123456789+02\n"
+        "2026-11-05T10:00:00Z valid next line\n";
+    kestrel::LineIndex lines(view(text));
+    kestrel::TimestampIndex timestamps(view(text), lines);
+    CHECK(timestamps.at(0) == kestrel::TimestampIndex::kNone);
+    CHECK(timestamps.at(1) == kestrel::TimestampIndex::kNone);
+    CHECK(timestamps.at(2) == kestrel::parse_iso8601(view("2026-11-05T10:00:00Z")));
+}

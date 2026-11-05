@@ -99,7 +99,8 @@ namespace kestrel
             {
                 const std::size_t size = std::min(CHUNK, buf.size() - start);
                 std::vector<std::size_t> offs = scan_chunk(buf.data() + start, size);
-                line_starts_.reserve(line_starts_.size() + offs.size());
+                // Let vector grow geometrically across chunks; reserving each
+                // exact chunk total repeatedly copies all previous offsets.
                 for (std::size_t off : offs)
                     line_starts_.push_back(start + off);
                 if (!progress(start + size, buf.size()))
@@ -184,7 +185,7 @@ namespace kestrel
             for (std::size_t t = 0; t < futs.size(); ++t)
             {
                 std::vector<std::size_t> offsets = futs[t].get();
-                line_starts_.reserve(line_starts_.size() + offsets.size());
+                // Keep amortized linear growth across all batches.
                 for (std::size_t offset : offsets)
                     line_starts_.push_back(starts[t] + offset);
             }

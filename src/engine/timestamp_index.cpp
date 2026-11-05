@@ -106,7 +106,9 @@ namespace kestrel
                 throw LoadCancelled();
             size_t s = li.line_start(i);
             size_t e = (i + 1 < n) ? li.line_start(i + 1) : src.size();
-            size_t len = std::min<size_t>(e - s, 30);
+            // Parsing reads only the leading timestamp, so expose the whole
+            // line without copying or cutting off fractions/timezone offsets.
+            size_t len = e - s;
             int64_t t = parse_iso8601(std::span<const char>(src.data() + s, len));
             ts_[i] = t;
             if (t != kNone)
