@@ -148,3 +148,32 @@ TEST_CASE("progress callback can cancel parallel line indexing")
                     kestrel::LoadCancelled);
     CHECK(reported);
 }
+
+TEST_CASE("dense lines remain ordered across progress chunk and batch boundaries")
+{
+    // Cover the sequential and parallel progress paths with seven-byte rows,
+    // so newlines do not line up with the one-MiB scanning chunks.
+    for (std::size_t bytes : {3U * 1024 * 1024 + 19, 9U * 1024 * 1024 + 19})
+    {
+        std::string buf(bytes, 'x');
+        for (std::size_t i = 6; i < buf.size(); i += 7)
+            buf[i] = '\n';
+        std::size_t completed = 0;
+        LineIndex li(view(buf), [&](std::size_t done, std::size_t total)
+                     {
+                         CHECK(total == buf.size());
+                         CHECK(done > completed);
+                         CHECK(done <= total);
+                         completed = done;
+                         return true;
+                     });
+        CHECK(completed == buf.size());
+        REQUIRE(li.line_count() == (buf.size() + 6) / 7);
+        for (std::size_t line : {std::size_t{0}, li.line_count() / 2, li.line_count() - 1})
+        {
+            CHECK(li.line_start(line) == line * 7);
+            CHECK(li.line_of(line * 7) == line);
+        }
+        CHECK(li.line_of(buf.size() - 1) == li.line_count() - 1);
+    }
+}
