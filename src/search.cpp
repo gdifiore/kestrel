@@ -179,7 +179,7 @@ namespace kestrel
 #endif
     }
 
-    void SearchController::consume_tail_events(double /*now_sec*/)
+    void SearchController::consume_tail_events()
     {
         if (!tail_mode_ || !source_)
             return;
@@ -409,7 +409,7 @@ namespace kestrel
     void SearchController::tick(double now_sec)
     {
         tail_updated_ = false;
-        consume_tail_events(now_sec);
+        consume_tail_events();
         // Apply any worker result first, on this (UI) thread.
         drain_results();
         schedule_tail_refresh();

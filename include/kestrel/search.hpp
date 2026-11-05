@@ -103,7 +103,7 @@ namespace kestrel
         void cancel_tail_refresh();
         void close_tail_watch();
         void reset_tail_watch();
-        void consume_tail_events(double now_sec);
+        void consume_tail_events();
 
 
         uint64_t source_revision_ = 0; // Logical source changes; follow updates retain identity.

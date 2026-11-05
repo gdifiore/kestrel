@@ -528,3 +528,56 @@ TEST_CASE("clearing a source drops its timestamp index and timing")
     CHECK(sc.timestamp_index().empty());
     CHECK(sc.last_scan_ms() == 0.0);
 }
+
+TEST_CASE("failed follow acquisition preserves the last complete snapshot")
+{
+    TempFile tf("2026-11-05T12:00:00Z foo\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_pattern("foo", 0);
+    rescan_now(sc);
+    const auto bytes = std::string(sc.source_bytes().data(), sc.source_bytes().size());
+    const auto revision = sc.source_revision();
+    const auto timestamp = sc.timestamp_index().min_ts();
+    sc.set_tail_mode(true);
+    std::filesystem::remove(tf.str());
+    sc.wait_for_completion();
+    CHECK(std::string_view(sc.source_bytes().data(), sc.source_bytes().size()) == bytes);
+    CHECK(sc.matches().size() == 1);
+    CHECK(sc.timestamp_index().min_ts() == timestamp);
+    CHECK(sc.source_revision() == revision);
+    {
+        std::ofstream out(tf.str(), std::ios::binary);
+        out << "foo\nfoo\n";
+    }
+    sc.wait_for_completion();
+    CHECK(sc.source_bytes().size() == 8);
+    CHECK(sc.matches().size() == 2);
+}
+
+TEST_CASE("disabling follow and clearing source reject queued refreshes")
+{
+    TempFile tf("old\n");
+    SearchController sc;
+    sc.load_source(tf.str());
+    sc.set_tail_mode(true);
+    {
+        std::ofstream out(tf.str(), std::ios::app | std::ios::binary);
+        out << "new\n";
+    }
+    sc.tick(1.0);
+    sc.set_tail_mode(false);
+    sc.wait_for_completion();
+    CHECK(sc.source_bytes().size() == 4);
+    sc.set_tail_mode(true);
+    {
+        std::ofstream out(tf.str(), std::ios::app | std::ios::binary);
+        out << "newer\n";
+    }
+    sc.tick(2.0);
+    sc.clear_source();
+    sc.wait_for_completion();
+    CHECK_FALSE(sc.has_source());
+    CHECK(sc.timestamp_index().empty());
+    CHECK(sc.matches().empty());
+}
